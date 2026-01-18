@@ -365,6 +365,39 @@ async def websocket_endpoint(websocket: WebSocket):
         manager.disconnect(websocket)
 # --------------------------
 
+# --- Keep-Alive (Self-Pinger) ---
+def start_keep_alive():
+    """
+    Pings the application's own URL every 10 minutes to prevent Render from sleeping.
+    Relies on RENDER_EXTERNAL_URL environment variable.
+    """
+    import time
+    import requests
+    import os
+    
+    url = os.environ.get("RENDER_EXTERNAL_URL")
+    if not url:
+        logger.info("Keep-Alive: No RENDER_EXTERNAL_URL found. Skipping.")
+        return
+
+    logger.info(f"Keep-Alive: Starting self-ping for {url}")
+    
+    def loop():
+        while True:
+            time.sleep(600) # 10 Minutes
+            try:
+                # Ping root or a health endpoint
+                r = requests.get(f"{url}/")
+                logger.info(f"Keep-Alive Ping: {r.status_code}")
+            except Exception as e:
+                logger.error(f"Keep-Alive Failed: {e}")
+                
+    t = threading.Thread(target=loop, daemon=True)
+    t.start()
+
 if __name__ == "__main__":
+    # Start Keep-Alive before server
+    start_keep_alive()
+    
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
