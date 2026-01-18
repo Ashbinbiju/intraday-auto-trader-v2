@@ -1,0 +1,27 @@
+# Task List
+
+- [x] Research `intradayscreener.com` data source <!-- id: 0 -->
+    - [x] Check if `stock-market-today` or `sector-performance` is public <!-- id: 1 -->
+    - [x] Identify API endpoints for Sector Performance and Stock details <!-- id: 2 -->
+    - [x] Determine authentication requirements (headers, tokens) <!-- id: 3 -->
+- [x] Develop Scraper <!-- id: 4 -->
+    - [x] Create Python script to fetch sector data <!-- id: 5 -->
+    - [x] Parse sector data to get top performing sectors <!-- id: 6 -->
+    - [x] Fetch stock list for selected sectors <!-- id: 7 -->
+- [x] Implement Trading Logic <!-- id: 8 -->
+    - [x] Setup SmartAPI connection with provided credentials <!-- id: 9 -->
+    - [x] Fetch 15-minute candle data <!-- id: 10 -->
+    - [x] Calculate VWAP and EMA 20 <!-- id: 11 -->
+    - [x] Implement logic: Buy if Stock in Positive Sector AND Price > VWAP & EMA20 <!-- id: 12 -->
+    - [x] **Logic Refinement**: Limit to Top 2 Positive Sectors Only <!-- id: 18 -->
+- [x] Build Auto Buy/Sell System <!-- id: 13 -->
+    - [x] Integrate Main Loop <!-- id: 14 -->
+    - [x] Implement order placement logic <!-- id: 15 -->
+- [x] Verify and Test <!-- id: 16 -->
+    - [x] Dry run/Paper trade mode <!-- id: 17 -->
+- [ ] Build UI & API <!-- id: 19 -->
+    - [ ] **Backend**: Create FastAPI server (`api.py`) to expose bot status/signals <!-- id: 20 -->
+    - [ ] **Backend**: Refactor [main.py](file:///C:/Users/Ashbin/.gemini/antigravity/brain/2df2ed12-f98d-4c89-bf98-dea5fc2acbc3/main.py) to run as a background task <!-- id: 21 -->
+    - [ ] **Frontend**: Initialize Next.js app (`/frontend`) for Vercel <!-- id: 22 -->
+    - [ ] **Frontend**: Build Dashboard (Sector View, Signal Feed) <!-- id: 23 -->
+    - [ ] **Deployment**: Create `requirements.txt` and `vercel.json` <!-- id: 24 -->

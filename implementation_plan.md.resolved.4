@@ -1,0 +1,34 @@
+# Implementation Plan - IntradayScreener Bot & UI
+
+## Goal
+Transform the standalone Python bot into a Web Application with robust Trade Management (SL/Target/Trailing).
+
+## User Review Required
+- **Exit Parameters**: Defaulting to:
+    -   **Stop Loss**: 1.0%
+    -   **Target**: 2.0%
+    -   **Trailing SL**: Activate after 1.0% gain, Move SL to Cost.
+
+## Components
+
+### 1. Backend (Python/FastAPI)
+- **[api.py](file:///C:/Users/Ashbin/.gemini/antigravity/brain/2df2ed12-f98d-4c89-bf98-dea5fc2acbc3/api.py)**: New entry point.
+- **[main.py](file:///C:/Users/Ashbin/.gemini/antigravity/brain/2df2ed12-f98d-4c89-bf98-dea5fc2acbc3/main.py) Refactor - Position Management**:
+    -   **`BOT_STATE["positions"]`**: Dictionary to track active trades.
+        -   Key: `symbol`
+        -   Value: `{ entry_price, qty, sl_price, target_price, current_ltp, status }`
+    -   **`manage_positions()`**: New function called in the loop.
+        -   Fetches LTP for all active positions.
+        -   Checks **Stop Loss**: if `LTP <= SL` -> Sell.
+        -   Checks **Target**: if `LTP >= Target` -> Sell.
+        -   Checks **Trailing**: If `LTP > Entry + 1%` -> Move `SL` to `Entry Price`.
+
+### 2. Frontend (Next.js - Vercel)
+- **Dashboard Update**:
+    -   Add **"Active Positions"** cards/table.
+    -   Show P&L (Simulated in Dry Run).
+
+## Verification Plan
+### Automated Tests
+- Run [main.py](file:///C:/Users/Ashbin/.gemini/antigravity/brain/2df2ed12-f98d-4c89-bf98-dea5fc2acbc3/main.py) in Dry Run.
+- **Simulate Price Movement**: Manually inject fake LTPs or watch live data to see if "Sell" orders are logged when SL/TP is hit.

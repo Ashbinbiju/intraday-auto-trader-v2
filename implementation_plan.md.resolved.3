@@ -1,0 +1,36 @@
+# Implementation Plan - IntradayScreener Bot & UI
+
+## Goal
+Transform the standalone Python bot into a Web Application. The Backend (FastAPI) will run on Render and handle the trading logic. The Frontend (Next.js) will run on Vercel and display specific Sector and Signal data.
+
+## User Review Required
+- **Deployment**: User handles pushing to Render/Vercel. I provided the code and config.
+- **Backend URL**: The Frontend will need the deployed Render URL to fetch data. I will set a placeholder `NEXT_PUBLIC_API_URL` in `.env.local`.
+
+## Components
+
+### 1. Backend (Python/FastAPI)
+- **`api.py`**: New entry point.
+    -   Running [main.py](file:///C:/Users/Ashbin/.gemini/antigravity/brain/2df2ed12-f98d-4c89-bf98-dea5fc2acbc3/main.py) logic in a `threading.Thread` or `asyncio.create_task` on startup.
+    -   **State Management**: `BOT_STATE` dictionary to store:
+        -   `top_sectors`: List of current top 2 sectors.
+        -   `signals`: List of generated buy signals (Symbol, Time, Price).
+    -   **Endpoints**:
+        -   `GET /`: Health check.
+        -   `GET /data`: Returns `BOT_STATE`.
+- **Refactoring**: Modify [main.py](file:///C:/Users/Ashbin/.gemini/antigravity/brain/2df2ed12-f98d-4c89-bf98-dea5fc2acbc3/main.py) 's loop to update a shared state object instead of just printing.
+
+### 2. Frontend (Next.js - Vercel)
+- **Tech**: Next.js 14 (App Router), Tailwind CSS (Premium Design).
+- **Pages**:
+    -   `Dashboard`:
+        -   **Sectors Card**: Visual bars showing NIFTY_IT % change etc.
+        -   **Signals Feed**: Live-updating list of buy signals.
+        -   **Status Indicator**: "Bot Running" / "Market Closed".
+- **Design**: Dark mode, glassmorphism, green/red accents for market data.
+
+## Verification Plan
+### Automated Tests
+- Run `api.py` locally.
+- Verify `GET /data` returns JSON.
+- Run Frontend locally (`npm run dev`) and verify it connects to `localhost:8000`.

@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+.env
+.venv
+env/
+ENV/
+
+# NodeJS
+node_modules/
+npm-debug.log
+yarn-error.log
+.next/
+out/
+build/
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# SmartAPI / Bot State
+bot_state.json
+smart_websocket.log
+trading_bot.log
+
+# OS
+.DS_Store
+Thumbs.db
