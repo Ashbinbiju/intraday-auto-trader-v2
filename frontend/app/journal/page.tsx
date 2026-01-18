@@ -7,7 +7,7 @@ import { useWebSocket } from '@/hooks/useWebSocket';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export default function JournalPage() {
-    const [trades, setTrades] = useState([]);
+    const [trades, setTrades] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const { data: wsData } = useWebSocket();
 
