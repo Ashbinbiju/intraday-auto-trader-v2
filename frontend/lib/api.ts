@@ -15,7 +15,7 @@ export const getWsUrl = () => {
 
     if (process.env.NEXT_PUBLIC_WS_URL) return process.env.NEXT_PUBLIC_WS_URL;
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.hostname;
-    return `${protocol}//${host}:8000/ws`;
+    // Fallback: Derive from HTTP API URL
+    const apiUrl = getBaseUrl();
+    return apiUrl.replace('http', 'ws') + '/ws';
 };
