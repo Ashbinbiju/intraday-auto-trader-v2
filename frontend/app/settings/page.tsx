@@ -11,7 +11,7 @@ export default function SettingsPage() {
 
     const [config, setConfig] = useState({
         risk: { stop_loss_pct: 0.01, target_pct: 0.02, trail_be_trigger: 0.012 },
-        limits: { max_trades_per_day: 3, max_trades_per_stock: 2, trading_end_time: "14:45" },
+        limits: { max_trades_per_day: 3, max_trades_per_stock: 2, trading_end_time: "14:45", trading_start_time: "09:30" },
         general: { quantity: 1, check_interval: 300, dry_run: true }
     });
 
