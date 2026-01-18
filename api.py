@@ -4,6 +4,7 @@ from pydantic import BaseModel
 import threading
 import uvicorn
 import logging
+import os
 import asyncio
 from main import (
     run_bot_loop, 
