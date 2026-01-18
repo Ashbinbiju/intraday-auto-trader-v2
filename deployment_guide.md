@@ -1,0 +1,58 @@
+# Deployment Guide 🚀
+
+This guide outlines how to deploy the **Intraday Auto Trader v2**.
+
+- **Frontend**: Deployed on [Vercel](https://vercel.com).
+- **Backend**: Deployed on [Render](https://render.com).
+
+---
+
+## ⚠️ CRITICAL: Persistence Warning (Render)
+By default, Render's "Web Service" has an **Ephemeral Filesystem**.
+**What this means:**
+- Every time you redeploy or the server restarts (which happens automatically), `bot_state.json` **WILL BE DELETED**.
+- The bot will restart with a fresh memory every time.
+- **Solution**: For a serious trading bot, you should upgrade to a **Render Disk** (Paid) or move the state to a database (Redis/Postgres) in the future.
+- *For now, the bot will rely on "Startup Reconciliation" to rebuild its state from Angel One live data on every restart.*
+
+---
+
+## Part 1: Backend (Render)
+1.  **Sign Up/Login** to [Render.com](https://render.com).
+2.  Click **New +** -> **Web Service**.
+3.  Connect your GitHub repository (`Ashbinbiju/intraday-auto-trader-v2`).
+4.  **Configure the Service**:
+    -   **Name**: `intraday-bot-backend`
+    -   **Region**: Singapore (or closest to India for speed).
+    -   **Branch**: `main`
+    -   **Root Directory**: `.` (Leave empty or dot)
+    -   **Runtime**: `Python 3`
+    -   **Build Command**: `pip install -r requirements.txt`
+    -   **Start Command**: `python api.py`
+5.  **Environment Variables** (Scroll down):
+    -   Add keys if you have them in `.env` (though currently your keys are hardcoded in `smart_api_helper.py`).
+    -   *Crucial*: If you move cookies/tokens to env vars later, add them here.
+6.  Click **Create Web Service**.
+7.  **Wait for Build**: Once live, copy the URL (e.g., `https://intraday-bot-backend.onrender.com`).
+
+---
+
+## Part 2: Frontend (Vercel)
+1.  **Sign Up/Login** to [Vercel.com](https://vercel.com).
+2.  Click **Add New...** -> **Project**.
+3.  Import `Ashbinbiju/intraday-auto-trader-v2`.
+4.  **Configure Project**:
+    -   **Framework Preset**: Next.js.
+    -   **Root Directory**: `frontend` (Click Edit -> Select `frontend` folder). **Important!**
+5.  **Environment Variables**:
+    -   Key: `NEXT_PUBLIC_API_URL`
+    -   Value: `https://intraday-bot-backend.onrender.com` (The URL from Part 1, **without** trailing slash).
+6.  Click **Deploy**.
+
+---
+
+## Part 3: Final Wiring
+1.  Once Vercel is live, copy the Frontend URL (e.g., `https://intraday-auto-trader-v2.vercel.app`).
+2.  Go back to **Render Dashboard** -> **Environment**.
+3.  Add `FRONTEND_URL` = `https://intraday-auto-trader-v2.vercel.app` (If you add CORS restriction checks later).
+4.  **Test**: Open the Vercel URL. It should show the dashboard and connect to the Render backend (might take 30s to wake up on Free Tier).
