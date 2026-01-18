@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+:root {
+  --foreground-rgb: 255, 255, 255;
+  --background-start-rgb: 10, 10, 15;
+  --background-end-rgb: 0, 0, 0;
+
+  --neon-green: #39FF14;
+  --neon-blue: #00FFFF;
+  --neon-purple: #B026FF;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(to bottom,
+      transparent,
+      rgb(var(--background-end-rgb))) rgb(var(--background-start-rgb));
+  font-feature-settings: "cv02", "cv03", "cv04";
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Glassmorphism Utilities */
+.glass {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+.neon-text-green {
+  color: var(--neon-green);
+  text-shadow: 0 0 5px rgba(57, 255, 20, 0.5);
+}
+
+.neon-border-green {
+  border-color: var(--neon-green);
+  box-shadow: 0 0 10px rgba(57, 255, 20, 0.2);
+}
+
+/* Animation utilities */
+@keyframes pulse-glow {
+
+  0%,
+  100% {
+    opacity: 1;
+    text-shadow: 0 0 10px rgba(57, 255, 20, 0.8);
+  }
+
+  50% {
+    opacity: 0.7;
+    text-shadow: 0 0 5px rgba(57, 255, 20, 0.4);
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
