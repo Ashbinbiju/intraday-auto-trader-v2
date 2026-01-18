@@ -191,6 +191,12 @@ The system is fully configured and optimized.
 - **Start Frontend**: `npm run dev`
 - **Open Dashboard**: `http://localhost:3000`
 
-🚀
+## Live Deployment 🌍
+
+- **Backend (Render)**: [https://intraday-bot-backend.onrender.com](https://intraday-bot-backend.onrender.com) (Check Render Dashboard for exact URL)
+- **Frontend (Vercel)**: [https://intraday-auto-trader-v2.vercel.app](https://intraday-auto-trader-v2.vercel.app) (Check Vercel Dashboard)
+- **Repo**: [https://github.com/Ashbinbiju/intraday-auto-trader-v2](https://github.com/Ashbinbiju/intraday-auto-trader-v2)
+
+🚀 Happy Trading!
 
 
