@@ -74,70 +74,61 @@ def get_smartapi_session():
     except Exception as e:
         logger.error(f"Error generating session: {e}")
         return None
-
-def fetch_candle_data(smartApi, token, symbol, interval="FIFTEEN_MINUTE", days=5):
+def fetch_candle_data(smartApi, token, symbol, interval="FIFTEEN_MINUTE", days=5, retries=3, delay=1):
     """
-    Fetches candle data. 
-    interval: FIFTEEN_MINUTE
+    Fetches candle data with Retry logic.
     """
-    # Setup dates
-    try:
-        to_date = datetime.now()
-        from_date = to_date - timedelta(days=days)
-        
-        params = {
-            "exchange": "NSE",
-            "symboltoken": token,
-            "interval": interval,
-            "fromdate": from_date.strftime("%Y-%m-%d %H:%M"),
-            "todate": to_date.strftime("%Y-%m-%d %H:%M")
-        }
-        
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                hist_data = smartApi.getCandleData(params)
-                
-                if hist_data and hasattr(hist_data, 'get') and hist_data.get('message') == 'Internal Error':
-                     raise Exception("Internal Error from API")
-
-                if hist_data and 'data' in hist_data:
-                    df = pd.DataFrame(hist_data['data'], columns=["datetime", "open", "high", "low", "close", "volume"])
-                    try:
-                        df['datetime'] = pd.to_datetime(df['datetime'])
-                    except:
-                        df['datetime'] = pd.to_datetime(df['datetime'], format='mixed')
-                    
-                    df['close'] = df['close'].astype(float)
-                    df['volume'] = df['volume'].astype(int)
-                    df['high'] = df['high'].astype(float)
-                    df['low'] = df['low'].astype(float)
-                    df['open'] = df['open'].astype(float)
-                    return df
-                
-                # Rate Limit Handling (AB2001)
-                elif hist_data and hist_data.get('errorcode') == 'AB2001':
-                     wait_time = 2.0 * (attempt + 1)
-                     logger.warning(f"Rate limited (AB2001) for {symbol}. Retrying in {wait_time}s...")
-                     time.sleep(wait_time)
-                     continue
-                
-                else:
+    # Standard format: %Y-%m-%d %H:%M
+    to_date = datetime.now().strftime("%Y-%m-%d %H:%M")
+    from_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M")
+    
+    params = {
+        "exchange": "NSE",
+        "symboltoken": str(token),
+        "interval": interval,
+        "fromdate": from_date,
+        "todate": to_date
+    }
+    
+    for i in range(retries):
+        try:
+            data = smartApi.getCandleData(params)
+            
+            if is_status_success(data):
+                if not data.get('data'):
                     return None
+                
+                df = pd.DataFrame(data['data'], columns=['datetime', 'open', 'high', 'low', 'close', 'volume'])
+                df['datetime'] = pd.to_datetime(df['datetime'])
+                
+                # Conversion logic
+                df['close'] = df['close'].astype(float)
+                df['volume'] = df['volume'].astype(int)
+                df['high'] = df['high'].astype(float)
+                df['low'] = df['low'].astype(float)
+                df['open'] = df['open'].astype(float)
+                return df
+            
+            # Identify Rate Limit Errors
+            msg = str(data.get('message', '')).lower()
+            if "access rate" in msg or "access denied" in msg or (data.get('errorcode') == 'AB2001'):
+                logger.warning(f"⚠️ SmartAPI Rate Limit hit (Candles). Retrying in {delay}s... ({i+1}/{retries})")
+                time.sleep(delay)
+                continue
 
-            except Exception as e:
-                is_rate_limit = "rate" in str(e).lower() or "limit" in str(e).lower()
-                if is_rate_limit:
-                    wait_time = 2.0 * (attempt + 1)
-                    logger.warning(f"Rate limit hit for {symbol}: {e}. Retrying in {wait_time}s...")
-                    time.sleep(wait_time)
-                else:
-                    logger.error(f"Error fetching candles for {symbol}: {e}")
-                    return None
-        return None
-    except Exception as e:
-        logger.error(f"Setup Error fetching candles for {symbol}: {e}")
-        return None
+            handle_api_error(data, f"Fetch Candles ({symbol})")
+            return None
+
+        except Exception as e:
+            if "access rate" in str(e).lower() or "access denied" in str(e).lower():
+                logger.warning(f"⚠️ Rate limit exception (Candles). Retrying in {delay}s... ({i+1}/{retries})")
+                time.sleep(delay)
+                continue
+            logger.error(f"Error fetching Candles for {symbol}: {e}")
+            return None
+            
+    return None
+
 
 def load_instrument_map():
     url = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
@@ -169,18 +160,37 @@ def fetch_all_orders(smartApi):
         logger.error(f"Error fetching Order Book: {e}")
         return []
 
-def fetch_net_positions(smartApi):
+def fetch_net_positions(smartApi, retries=3, delay=2):
     """
-    Fetches Net Positions (Open positions).
+    Fetches Net Positions (Open positions) with Retry logic for Rate Limits.
     """
-    try:
-        data = smartApi.position()
-        if data and 'data' in data:
-            return data['data'] # List of positions
-        return None
-    except Exception as e:
-        logger.error(f"Error fetching Positions: {e}")
-        return None
+    for i in range(retries):
+        try:
+            data = smartApi.position()
+            if is_status_success(data):
+                # Return empty list if no positions exist
+                return data.get('data') or []
+            
+            # Identify Rate Limit Errors
+            msg = str(data.get('message', '')).lower()
+            if "access rate" in msg or "access denied" in msg:
+                logger.warning(f"⚠️ SmartAPI Rate Limit hit. Retrying in {delay}s... ({i+1}/{retries})")
+                time.sleep(delay)
+                continue
+
+            handle_api_error(data, "Fetch Positions")
+            return None
+        except Exception as e:
+            # Catch "Couldn't parse JSON" errors which happen on rate limit html responses
+            if "access rate" in str(e).lower() or "access denied" in str(e).lower():
+                logger.warning(f"⚠️ Rate limit exception. Retrying in {delay}s... ({i+1}/{retries})")
+                time.sleep(delay)
+                continue
+            logger.error(f"Error fetching Positions: {e}")
+            return None
+    
+    logger.error("🛑 Max retries reached for fetch_net_positions.")
+    return None
 
 def calculate_margin(smartApi, positions_list):
     """

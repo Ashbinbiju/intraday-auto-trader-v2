@@ -140,6 +140,9 @@ def manage_positions(smartApi, token_map):
 
     logger.info(f"Managing {len(active_symbols)} active positions...")
 
+    current_time = time.strftime("%H:%M")
+    square_off_time = config_manager.get("limits", "square_off_time") or "15:15"
+
     for symbol in active_symbols:
         token = token_map.get(symbol)
         
@@ -147,6 +150,18 @@ def manage_positions(smartApi, token_map):
             continue
 
         try:
+            # 0. Check Auto Square-Off Time
+            if current_time >= square_off_time:
+                logger.info(f"⏰ Square-Off Time Reached ({square_off_time}). Closing {symbol}...")
+                with state_lock:
+                    pos = BOT_STATE["positions"].get(symbol)
+                    if pos and pos["status"] == "OPEN":
+                        place_sell_order(smartApi, symbol, token, pos['qty'], reason="SQUARE OFF")
+                        pos['status'] = "CLOSED"
+                        pos['exit_price'] = 0 # Market Exit
+                        save_state(BOT_STATE)
+                continue
+
             params = {
                 "exchange": "NSE",
                 "tradingsymbol": f"{symbol}-EQ",
@@ -162,7 +177,7 @@ def manage_positions(smartApi, token_map):
                 logger.warning(f"Could not fetch LTP for {symbol}")
                 continue
 
-            # CRITICAL SECTION: Read State & Update
+            # ... (Rest of existing logic) ...
             with state_lock:
                 pos = BOT_STATE["positions"].get(symbol)
                 

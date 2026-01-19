@@ -7,7 +7,8 @@
     "limits": {
         "max_trades_per_day": 1,
         "max_trades_per_stock": 3,
-        "trading_end_time": "14:45"
+        "trading_end_time": "14:45",
+        "square_off_time": "15:15"
     },
     "general": {
         "quantity": 1,
