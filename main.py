@@ -230,7 +230,7 @@ def reconcile_state(smartApi):
         live_positions = fetch_net_positions(smartApi)
         if live_positions is None:
             logger.error("Reconciliation Failed: Could not fetch positions.")
-            return
+            return False # Failure
 
         # 1. Map Live Positions (Only Open ones)
         broker_open_positions = {}
@@ -281,6 +281,9 @@ def reconcile_state(smartApi):
         
     except Exception as e:
         logger.error(f"Error during Reconciliation: {e}")
+        return False # Failure
+    
+    return True # Success
 
 import asyncio
 
@@ -345,7 +348,16 @@ def run_bot_loop(async_loop=None, ws_manager=None):
             
             # --- Reconciliation ---
             if SMART_API_SESSION:
-                 reconcile_state(SMART_API_SESSION)
+                 success = reconcile_state(SMART_API_SESSION)
+                 if not success:
+                     logger.warning("Reconciliation Failed. Attempting to Re-Authenticate...")
+                     new_session = get_smartapi_session()
+                     if new_session:
+                         SMART_API_SESSION = new_session
+                         smartApi = new_session # Update local reference
+                         logger.info("Session Re-established successfully. ✅")
+                     else:
+                         logger.error("Session Re-authentication Failed. Will retry next cycle.")
             # ----------------------
 
             # --- Manage Active Positions ---
