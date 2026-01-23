@@ -51,7 +51,7 @@ class OrderUpdateWS:
         """
         Sends/Expects heartbeat.
         """
-        while self.ws and self.ws.open:
+        while self.is_running and self.ws:
             try:
                 await self.ws.send("ping")
                 await asyncio.sleep(10)
