@@ -22,7 +22,11 @@ def load_state():
         "orders": {},
         "logs": [],
         "is_trading_allowed": True,
-        "limits": {}
+        "limits": {},
+        "indices": [],
+        "top_sectors": [],
+        "total_trades_today": 0,
+        "stock_trade_counts": {}
     }
     
     # We lock during loading just to be safe, though usually single-threaded at start.

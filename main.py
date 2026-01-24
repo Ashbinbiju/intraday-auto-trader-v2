@@ -81,24 +81,7 @@ def place_buy_order(smartApi, symbol, token, qty):
 SMART_API_SESSION = None
 TOKEN_MAP = {}
 
-BOT_STATE = {
-    "is_running": False,
-    "is_trading_allowed": True, # Kill switch
-    "last_update": None,
-    "top_sectors": [],
-    "signals": [],
-    "positions": {}, 
-    "logs": [],
-    # Tracking for Limits
-    "total_trades_today": 0,
-    "stock_trade_counts": {}, # { symbol: count }
-    "limits": {
-        "max_trades_day": config_manager.get("limits", "max_trades_per_day"),
-        "max_trades_stock": config_manager.get("limits", "max_trades_per_stock"),
-        "trading_end_time": config_manager.get("limits", "trading_end_time")
-    },
-    "indices": [] # Market Indices Data
-}
+
 
 def place_sell_order(smartApi, symbol, token, qty, reason="EXIT"):
     """
