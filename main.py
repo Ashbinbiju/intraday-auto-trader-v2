@@ -1,7 +1,7 @@
 import logging
 import time
 import sys
-from scraper import fetch_top_performing_sectors, fetch_stocks_in_sector
+from scraper import fetch_top_performing_sectors, fetch_stocks_in_sector, fetch_market_indices
 from smart_api_helper import get_smartapi_session, fetch_candle_data, load_instrument_map, fetch_net_positions
 from indicators import calculate_indicators, check_buy_condition
 from utils import is_market_open
@@ -96,7 +96,8 @@ BOT_STATE = {
         "max_trades_day": config_manager.get("limits", "max_trades_per_day"),
         "max_trades_stock": config_manager.get("limits", "max_trades_per_stock"),
         "trading_end_time": config_manager.get("limits", "trading_end_time")
-    }
+    },
+    "indices": [] # Market Indices Data
 }
 
 def place_sell_order(smartApi, symbol, token, qty, reason="EXIT"):
@@ -399,6 +400,13 @@ def run_bot_loop(async_loop=None, ws_manager=None):
             if BOT_STATE["total_trades_today"] >= max_trades_day:
                 time.sleep(60)
                 continue
+            
+            # --- Fetch Market Indices (New) ---
+            indices = fetch_market_indices()
+            if indices:
+                BOT_STATE["indices"] = indices
+                broadcast_state() # Update UI with indices
+            # ----------------------------------
             
             # ... (Scanning) ...
             sectors = fetch_top_performing_sectors()

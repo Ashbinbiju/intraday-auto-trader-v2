@@ -5,6 +5,7 @@ import { TrendingUp, Activity, PieChart, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 
 import { getBaseUrl } from '@/lib/api';
+import MarketTicker from '@/components/MarketTicker';
 
 export default function Dashboard() {
     const [data, setData] = useState<any>(null);
@@ -65,6 +66,9 @@ export default function Dashboard() {
                 </h1>
                 <p className="text-gray-400">Here is your market overview for today.</p>
             </header>
+
+            {/* Market Indices Ticker */}
+            <MarketTicker indices={data?.indices || []} />
 
             {/* Stats Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

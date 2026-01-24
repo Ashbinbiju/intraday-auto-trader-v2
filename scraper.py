@@ -88,8 +88,29 @@ def fetch_stocks_in_sector(sector_key):
         logger.error(f"Error fetching stocks for sector {sector_key}: {e}")
         return []
 
+        return []
+
+def fetch_market_indices():
+    """
+    Fetches major market indices performance.
+    """
+    url = "https://intradayscreener.com/api/indices/indexData"
+    try:
+        response = requests.get(url, headers=HEADERS)
+        response.raise_for_status()
+        data = response.json()
+        return data # Returns list of dicts directly
+    except Exception as e:
+        logger.error(f"Error fetching indices: {e}")
+        return []
+
 if __name__ == "__main__":
-    print("Fetching Top Sectors...")
+    print("Fetching Market Indices...")
+    indices = fetch_market_indices()
+    for idx in indices:
+        print(f"{idx['symbol']}: {idx['ltp']} ({idx['changePct']}%)")
+
+    print("\nFetching Top Sectors...")
     top_sectors = fetch_top_performing_sectors()
     
     for sector in top_sectors:
