@@ -33,7 +33,7 @@ class OrderUpdateWS:
         
         while self.is_running:
             try:
-                async with websockets.connect(self.url, additional_headers=headers, ssl=ssl_context) as websocket:
+                async with websockets.connect(self.url, additional_headers=headers, ssl=ssl_context, ping_interval=None) as websocket:
                     self.ws = websocket
                     logger.info("Order WebSocket Connected!")
                     
