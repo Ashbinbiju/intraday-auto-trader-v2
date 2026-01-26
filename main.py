@@ -134,15 +134,17 @@ def manage_positions(smartApi, token_map):
             continue
 
         try:
-            # 0. Check Auto Square-Off Time
-            if current_time >= square_off_time:
-                logger.info(f"⏰ Square-Off Time Reached ({square_off_time}). Closing {symbol}...")
+            # 0. Check Auto Square-Off Time (User Requested 14:45)
+            # Was 15:15, now strict 14:45 Exit
+            if current_time >= "14:45":
+                logger.info(f"⏰ Time Limit Reached (14:45). Booking Profit/Loss for {symbol}...")
                 with state_lock:
                     pos = BOT_STATE["positions"].get(symbol)
                     if pos and pos["status"] == "OPEN":
-                        place_sell_order(smartApi, symbol, token, pos['qty'], reason="SQUARE OFF")
+                        place_sell_order(smartApi, symbol, token, pos['qty'], reason="TIME_EXIT")
                         pos['status'] = "CLOSED"
                         pos['exit_price'] = 0 # Market Exit
+                        pos['exit_reason'] = "TIME_EXIT"
                         save_state(BOT_STATE)
                 continue
 
@@ -171,34 +173,59 @@ def manage_positions(smartApi, token_map):
 
                 entry_price = pos['entry_price']
                 sl_price = pos['sl']
-                target_price = pos['target']
+                # target_price = pos['target'] # DISABLED Fixed Target
                 
-                # 1. Check Stop Loss
+                # 1. Check Stop Loss (Fixed SL)
                 if current_ltp <= sl_price:
                     logger.info(f"{symbol} Hit STOP LOSS at {current_ltp} (SL: {sl_price})")
                     place_sell_order(smartApi, symbol, token, pos['qty'], reason="STOP LOSS")
                     pos['status'] = "CLOSED"
                     pos['exit_price'] = current_ltp
+                    pos['exit_reason'] = "STOP_LOSS"
                     save_state(BOT_STATE) # PERSISTENCE
                     continue
     
-                # 2. Check Target
-                if current_ltp >= target_price:
-                    logger.info(f"{symbol} Hit TARGET at {current_ltp} (TP: {target_price})")
-                    place_sell_order(smartApi, symbol, token, pos['qty'], reason="TARGET")
-                    pos['status'] = "CLOSED"
-                    pos['exit_price'] = current_ltp
-                    save_state(BOT_STATE) # PERSISTENCE
-                    continue
+                # 2. Check Target (DISABLED - Replaced by Technical Exit)
+                # if current_ltp >= target_price:
+                #     logger.info(f"{symbol} Hit TARGET at {current_ltp} (TP: {target_price})")
+                #     place_sell_order(smartApi, symbol, token, pos['qty'], reason="TARGET")
+                #     pos['status'] = "CLOSED"
+                #     pos['exit_price'] = current_ltp
+                #     save_state(BOT_STATE) 
+                #     continue
     
-                # 3. Trailing SL Logic
-                trail_trigger = config_manager.get("risk", "trail_be_trigger")
-                gain_pct = (current_ltp - entry_price) / entry_price
-                
-                if gain_pct >= trail_trigger and sl_price < entry_price:
-                    new_sl = entry_price 
-                    pos['sl'] = new_sl
-                    logger.info(f"{symbol}: Trailing Trigger Hit (+{gain_pct*100:.2f}%). Moving SL to Breakeven ({new_sl})")
+                # 3. Technical Exit (Profit Booking)
+                # Rule: Exit if Price < EMA20 OR Price < VWAP
+                try:
+                    df_tech = fetch_candle_data(smartApi, symbol, token, "FIFTEEN_MINUTE")
+                    if df_tech is not None:
+                        df_tech = calculate_indicators(df_tech)
+                        
+                    if df_tech is not None and not df_tech.empty:
+                        last_row = df_tech.iloc[-1]
+                        ema_20 = last_row.get('EMA_20')
+                        vwap = last_row.get('VWAP')
+                        
+                        if ema_20 and vwap and not pd.isna(ema_20) and not pd.isna(vwap):
+                            exit_reason = None
+                            
+                            # Check Breakdown
+                            if current_ltp < ema_20:
+                                exit_reason = f"Breakdown EMA20 ({ema_20:.2f})"
+                            elif current_ltp < vwap:
+                                exit_reason = f"Breakdown VWAP ({vwap:.2f})"
+                            
+                            if exit_reason:
+                                logger.info(f"📉 {symbol} Technical Exit Triggered: {exit_reason}. Closing Position at {current_ltp}")
+                                place_sell_order(smartApi, symbol, token, pos['qty'], reason="TECH_EXIT")
+                                pos['status'] = "CLOSED"
+                                pos['exit_price'] = current_ltp
+                                pos['exit_reason'] = "TECH_EXIT"
+                                save_state(BOT_STATE)
+                                continue
+
+                except Exception as e_tech:
+                     logger.warning(f"Technical Exit Check failed for {symbol}: {e_tech}")
 
         except Exception as e:
             logger.error(f"Error managing position {symbol}: {e}")
