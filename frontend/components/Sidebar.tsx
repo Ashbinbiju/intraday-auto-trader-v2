@@ -19,9 +19,9 @@ export default function Sidebar() {
     return (
         <aside className="hidden md:flex fixed left-0 top-0 h-screen w-64 bg-black/90 border-r border-white/10 backdrop-blur-xl flex-col z-50">
             <div className="p-6">
-                <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-green-400 to-blue-500">
-                    BOT V2.0
-                </h2>
+                <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-green-400 to-blue-500">
+                    SENTINEL v2.0
+                </h1>
                 <p className="text-xs text-gray-500">Intraday Terminal</p>
             </div>
 
