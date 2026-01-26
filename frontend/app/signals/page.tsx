@@ -12,12 +12,31 @@ export default function SignalsPage() {
     const { data: wsData, isConnected } = useWebSocket();
     const [signals, setSignals] = useState([]);
 
+    const [audio] = useState(typeof Audio !== "undefined" ? new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3') : null);
+
     useEffect(() => {
         if (wsData?.signals) {
+            // Check if new signal arrived (simple length check)
+            if (wsData.signals.length > signals.length && signals.length > 0) {
+                // Play Sound
+                audio?.play().catch(e => console.log("Audio play failed (interaction needed first)", e));
+
+                // Show Browser Notification (if supported)
+                if ("Notification" in window && Notification.permission === "granted") {
+                    new Notification("New Trade Signal!", { body: `New Signal Generated: ${wsData.signals[0].symbol}` });
+                }
+            }
             setSignals(wsData.signals);
             setLoading(false);
         }
     }, [wsData]);
+
+    // Request Notification Permission on Mount
+    useEffect(() => {
+        if ("Notification" in window && Notification.permission !== "granted") {
+            Notification.requestPermission();
+        }
+    }, []);
 
     if (loading) return <div className="p-10 text-center text-gray-400 animate-pulse">Loading Live Signals...</div>;
 
