@@ -1,0 +1,96 @@
+# 📄 Intraday Bot Strategy Documentation
+
+This document outlines the exact logic, indicators, and risk management rules used by the **Intraday Auto Trader v2**.
+
+---
+
+## 1. Objective 🎯
+**Capture momentum** in "Top Performing Sectors" by buying strong stocks that are trading above their key intraday averages (VWAP & EMA 20).
+
+---
+
+## 2. Selection Process (The Funnel) 🌪️
+
+### Step 1: Sector Selection
+*   **Source**: `IntradayScreener.com`
+*   **Logic**: Fetch all sectors. Sort by **% Change (Positive)**.
+*   **Action**: Select the Top 3 positive sectors.
+
+### Step 2: Stock Selection
+*   **Source**: `IntradayScreener.com` (Sector Constituents)
+*   **Logic**: Fetch all stocks inside those Top 3 sectors.
+*   **Filter**: Only consider stocks with **positive % change**.
+
+---
+
+## 3. Entry Strategy (Buying) 🚀
+
+The bot scans the selected stocks every minute using **15-Minute Candles**.
+
+### ✅ Buy Conditions (All must be TRUE)
+1.  **Price > VWAP** (Volume Weighted Average Price)
+    *   *Confirms Buyers are in control today.*
+2.  **Price > EMA 20** (Exponential Moving Average)
+    *   *Confirms Short-term Momentum is Up.*
+3.  **Entry Guard: "Don't Chase" Rule** 🛡️
+    *   Calculate distance from EMA 20.
+    *   **Condition**: [(Price - EMA20) / EMA20 < 1.5%](file:///C:/Users/Ashbin/.gemini/antigravity/brain/2df2ed12-f98d-4c89-bf98-dea5fc2acbc3/config.py#67-74)
+    *   *Why?* Prevents buying extended stocks that are likely to pull back.
+
+---
+
+## 4. Exit Strategy (Selling) 💰
+
+Once a trade is entered, it is managed automatically by the **Active Position Manager**.
+
+### 🛑 Loss Protection
+*   **Initial Stop Loss (SL)**: **1.0%** below Entry Price.
+*   *Hard exit if price hits this level.*
+
+### 📉 Technical Profit Booking (Dynamic Exit)
+*   Instead of a fixed target, we let the winner run until the trend breaks.
+*   **Condition 1**: Price closes below **EMA 20** (Trend Broken).
+*   **Condition 2**: Price closes below **VWAP** (Momentum Lost).
+*   **Condition 3**: Time reaches **14:45** (End of Day Exit).
+
+### 📈 Trailing Stop Loss (Locking Profits)
+*   **Activation**: When price moves **+1.2%** in profit.
+*   **Action**: `SL = max(Entry Price, EMA 20)`. Matches the trend.
+
+---
+
+## 5. Operational Rules ⚙️
+
+### ⏰ Time Windows
+*   **Trading Start**: `09:30 AM` (Skip first 15 mins volatility).
+*   **Trading End**: `02:45 PM` (No new entries).
+*   **Auto Square-Off**: `03:15 PM` (Close all open intraday positions).
+
+### 🚦 Trade Limits
+*   **Max Trades Per Day**: `3` (Stops trading after 3 executed orders).
+*   **Max Trades Per Stock**: `2` (Prevents over-trading a single symbol).
+*   **Quantity**: Fixed quantity (Default: `1`).
+
+---
+
+## 6. Logic Flowchart
+
+```mermaid
+graph TD
+    A[Start Scan] --> B{Sector > 0%?}
+    B -- Yes --> C[Fetch Stocks]
+    B -- No --> A
+    C --> D{Stock > VWAP?}
+    D -- Yes --> E{Stock > EMA20?}
+    D -- No --> F[Skip]
+    E -- Yes --> G{Not Extended (<1.5%)?}
+    G -- Yes --> H[BUY SIGNAL 🟢]
+    G -- No --> I[Skip (Late Entry)]
+    H --> J[Monitor Position]
+    J --> K{Hit SL / TP?}
+    K -- Yes --> L[EXIT 🔴]
+```
+
+---
+
+*This logic is hardcoded in [indicators.py](file:///C:/Users/Ashbin/.gemini/antigravity/brain/2df2ed12-f98d-4c89-bf98-dea5fc2acbc3/indicators.py) and [main.py](file:///C:/Users/Ashbin/.gemini/antigravity/brain/2df2ed12-f98d-4c89-bf98-dea5fc2acbc3/main.py) but can be tuned via the **Settings Page** (Risk % and Limits).*

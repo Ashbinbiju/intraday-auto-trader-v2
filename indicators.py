@@ -29,47 +29,62 @@ def calculate_indicators(df):
 
     df['VWAP'] = df.groupby(date_series)['vp'].cumsum() / df.groupby(date_series)['volume'].cumsum()
     
+    # Volume SMA 20
+    df['Volume_SMA_20'] = df['volume'].ewm(span=20, adjust=False).mean()
+
     return df
 
 
 def check_buy_condition(df, current_price=None):
     """
     Checks the Buy condition on the latest closed candle or live price.
-    Condition: Price > VWAP AND Price > EMA 20
+    Condition: Price > VWAP AND Price > EMA 20 AND Green Candle AND Volume > 1.5x Avg
     """
     if df is None or df.empty:
         return False, "No Data"
 
-    # Get latest completed candle (assuming the last row is the latest completed or current building candle)
-    # Usually strictly wait for close. But for "Auto Buy", users often want "Current Live Price" > Indicator.
-    # Since we fetch 15 min candles, the indicators are valid for the *previous* close or current-updating.
-    # We will use the LATEST AVAILABLE row for indicators.
-    
+    # Get latest completed candle
     last_row = df.iloc[-1]
-    ema_20 = last_row['EMA_20']
-    vwap = last_row['VWAP']
     
-    # If current_price is not provided, use the close of the last candle
-    price = current_price if current_price else last_row['close']
+    # Extract Indicators
+    ema_20 = last_row.get('EMA_20')
+    vwap = last_row.get('VWAP')
+    vol_sma = last_row.get('Volume_SMA_20')
+    current_vol = last_row.get('volume')
+    open_price = last_row.get('open')
+    close_price = last_row.get('close')
     
-    if pd.isna(ema_20) or pd.isna(vwap):
+    # If current_price is provided (live check), override close
+    price = current_price if current_price else close_price
+    
+    if pd.isna(ema_20) or pd.isna(vwap) or pd.isna(vol_sma):
         return False, "Not enough data for indicators"
     
-    if price > vwap and price > ema_20:
+    reasons = []
+
+    # 1. Trend Conditions
+    if price <= vwap:
+        reasons.append(f"Price below VWAP")
+    if price <= ema_20:
+        reasons.append(f"Price below EMA20")
+
+    # 2. Candle Color (Green)
+    if price <= open_price:
+         reasons.append("Red Candle (Price <= Open)")
+
+    # 3. Volume Confirmation (Volume Spike > 1.5x Average)
+    # Note: Only check volume on the closed candle basis to avoid partial candle noise, 
+    # unless we are sure current_vol is live and extrapolated. 
+    # For safety, we use the candle's volume.
+    if current_vol <= (vol_sma * 1.5):
+        reasons.append(f"Low Volume ({current_vol} < 1.5x Avg {int(vol_sma)})")
+
+    if not reasons:
         # Late Entry Protection (Guard)
         ema_dist = ((price - ema_20) / ema_20) * 100
         if ema_dist > 1.5:
              return False, f"Late Entry Guard: Price is {ema_dist:.2f}% > EMA20 (Max 1.5%)"
 
-        return True, f"Price ({price}) > VWAP ({vwap:.2f}) & EMA20 ({ema_20:.2f})"
+        return True, f"Strong Buy: Price > VWAP/EMA20 + Vol Spike ({int(current_vol)}) + Green Candle"
     
-    # Analyze Failure Reason
-    reasons = []
-    if price <= vwap:
-        diff = ((vwap - price) / price) * 100
-        reasons.append(f"Price below VWAP (-{diff:.2f}%)")
-    if price <= ema_20:
-        diff = ((ema_20 - price) / price) * 100
-        reasons.append(f"Price below EMA20 (-{diff:.2f}%)")
-        
     return False, f"Skipped: {', '.join(reasons)}"
