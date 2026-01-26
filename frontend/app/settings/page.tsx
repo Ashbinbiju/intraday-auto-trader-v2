@@ -38,19 +38,21 @@ export default function SettingsPage() {
         setSaving(true);
         try {
             // Convert strings back to numbers for API
+            // Use fallback to 0 to prevent NaN which causes 422
             const payload = {
                 risk: {
-                    stop_loss_pct: parseFloat(config.risk.stop_loss_pct as any),
-                    target_pct: parseFloat(config.risk.target_pct as any),
-                    trail_be_trigger: parseFloat(config.risk.trail_be_trigger as any)
+                    stop_loss_pct: parseFloat(config.risk.stop_loss_pct as any) || 0.01,
+                    target_pct: parseFloat(config.risk.target_pct as any) || 0.02,
+                    trail_be_trigger: parseFloat(config.risk.trail_be_trigger as any) || 0.012
                 },
                 limits: {
-                    max_trades_per_day: parseInt(config.limits.max_trades_per_day as any),
-                    max_trades_per_stock: parseInt(config.limits.max_trades_per_stock as any),
-                    trading_end_time: config.limits.trading_end_time
+                    max_trades_per_day: parseInt(config.limits.max_trades_per_day as any) || 3,
+                    max_trades_per_stock: parseInt(config.limits.max_trades_per_stock as any) || 2,
+                    trading_start_time: config.limits.trading_start_time || "09:30",
+                    trading_end_time: config.limits.trading_end_time || "14:45"
                 },
                 general: {
-                    quantity: parseInt(config.general.quantity as any),
+                    quantity: parseInt(config.general.quantity as any) || 1,
                     check_interval: 300,
                     dry_run: config.general.dry_run
                 }
