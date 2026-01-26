@@ -9,24 +9,40 @@ from config import config_manager
 from state_manager import load_state, save_state, start_auto_save, state_lock
 
 # Configure Logging
+import datetime
+
+def ist_converter(*args):
+    utc_dt = datetime.datetime.now(datetime.timezone.utc)
+    ist_dt = utc_dt + datetime.timedelta(hours=5, minutes=30)
+    return ist_dt.timetuple()
+
 class LogBufferHandler(logging.Handler):
     def emit(self, record):
-        log_entry = self.format(record)
-        # Append to global shared buffer
-        if "BOT_STATE" in globals():
-            if len(BOT_STATE["logs"]) > 100:
-                BOT_STATE["logs"].pop(0)
-            BOT_STATE["logs"].append(log_entry)
+        try:
+            log_entry = self.format(record)
+            # Append to global shared buffer
+            if "BOT_STATE" in globals():
+                if len(BOT_STATE["logs"]) > 100:
+                    BOT_STATE["logs"].pop(0)
+                BOT_STATE["logs"].append(log_entry)
+        except Exception:
+            self.handleError(record)
 
 root_logger = logging.getLogger()
 root_logger.setLevel(logging.INFO)
 
 # Formatter
 formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%H:%M:%S')
+formatter.converter = ist_converter
 
 # Stream Handler (Stdout)
 stream_handler = logging.StreamHandler(sys.stdout)
 stream_handler.setFormatter(formatter)
+
+# Remove existing handlers to avoid duplicates
+if root_logger.hasHandlers():
+    root_logger.handlers.clear()
+
 root_logger.addHandler(stream_handler)
 
 # File Handler
