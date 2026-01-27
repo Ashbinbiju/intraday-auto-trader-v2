@@ -2,7 +2,7 @@ import logging
 import time
 import sys
 from scraper import fetch_top_performing_sectors, fetch_stocks_in_sector, fetch_market_indices
-from smart_api_helper import get_smartapi_session, fetch_candle_data, load_instrument_map, fetch_net_positions
+from smart_api_helper import get_smartapi_session, fetch_candle_data, load_instrument_map, fetch_net_positions, verify_order_status
 from indicators import calculate_indicators, check_buy_condition
 from utils import is_market_open
 from config import config_manager
@@ -498,47 +498,48 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                         }
                         
                         if not any(s['symbol'] == symbol and s['time'] == signal_data['time'] for s in BOT_STATE['signals']):
-                             with state_lock:
-                                 BOT_STATE["signals"].insert(0, signal_data)
-                                 if len(BOT_STATE["signals"]) > 50:
-                                     BOT_STATE["signals"].pop()
+                            BOT_STATE['signals'].insert(0, signal_data)
+                            if len(BOT_STATE['signals']) > 50: BOT_STATE['signals'] = BOT_STATE['signals'][:50]
+                            broadcast_state()
 
-                        logger.info(f"SIGNAL FOUND: {symbol} | {message}")
-                        
-                        # BROADCAST SIGNAL
-                        broadcast_state() 
-
-                        order_id = place_buy_order(smartApi, symbol, token, quantity)
-                        if order_id:
-                            # ... (Update State) ...
-                            sl_pct = config_manager.get("risk", "stop_loss_pct")
-                            tp_pct = config_manager.get("risk", "target_pct")
-                            
-                            grade = "B"
-                            if sector['change'] >= 2.0: grade = "A+"
-                            elif sector['change'] >= 1.0: grade = "A"
-
-                            
-                            with state_lock:
-                                BOT_STATE["positions"][symbol] = {
-                                    "entry_price": screener_ltp,
-                                    "qty": quantity,
-                                    "sl": screener_ltp * (1 - sl_pct),
-                                    "target": screener_ltp * (1 + tp_pct),
-                                    "status": "OPEN",
-                                    "entry_time": current_time,
-                                    "setup_grade": grade
-                                }
+                        # --- AUTO BUY LOGIC ---
+                        if message.startswith("Strong Buy"):
+                            current_trades = len([p for p in BOT_STATE["positions"].values() if p["status"] == "OPEN"])
+                            if current_trades < max_trades_day:
+                                logger.info(f"🚀 Executing BUY for {symbol} at {screener_ltp}")
+                                orderId = place_buy_order(smartApi, symbol, token, quantity)
                                 
-                                BOT_STATE["total_trades_today"] += 1
-                                BOT_STATE["stock_trade_counts"][symbol] = current_stock_trades + 1
-                                
-                                logger.info(f"Tracking Position: {symbol} ...")
-                                
-                                # BROADCAST TRADE
-                                broadcast_state()
-                                
-                                # PERSIST STATE
+                                # Verify Order Status (Prevent Ghost Trades)
+                                if orderId:
+                                    is_success, status, avg_price = verify_order_status(smartApi, orderId)
+                                    
+                                    if is_success:
+                                        entry_price = avg_price if avg_price > 0 else screener_ltp
+                                        
+                                        with state_lock:
+                                            BOT_STATE["positions"][symbol] = {
+                                                "symbol": symbol,
+                                                "entry_price": entry_price,
+                                                "qty": quantity,
+                                                "status": "OPEN",
+                                                "entry_time": time.strftime("%H:%M"),
+                                                "sl": entry_price * (1 - config_manager.get("risk", "stop_loss_pct")),
+                                                # "target": entry_price * (1 + config_manager.get("risk", "target_pct")), 
+                                                "highest_ltp": entry_price,
+                                                "is_breakeven_active": False,
+                                                "order_id": orderId
+                                            }
+                                            BOT_STATE["total_trades_today"] += 1
+                                            BOT_STATE["stock_trade_counts"][symbol] = current_stock_trades + 1
+                                            
+                                        save_state(BOT_STATE) # PERSIST STATE
+                                        broadcast_state() # BROADCAST TRADE
+                                        logger.info(f"✅ Trade Confirmed: {symbol} @ {entry_price}")
+                                    else:
+                                        logger.error(f"❌ Trade Rejected/Failed Validation: {symbol} Status: {status}")
+                                else:
+                                    logger.error(f"❌ Failed to place order for {symbol}")
+                        # ----------------------       
                                 save_state(BOT_STATE)
 
                     else:

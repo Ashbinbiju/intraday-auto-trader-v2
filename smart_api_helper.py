@@ -451,3 +451,54 @@ def get_individual_order(smartApi, unique_order_id):
     except Exception as e:
         logger.error(f"Fetch Individual Order Failed: {e}")
         return None
+
+
+def verify_order_status(smartApi, order_id, retries=5, delay=1):
+    """
+    Verifies if an order was successfully placed and is not Rejected.
+    Returns: (is_success: bool, status: str, average_price: float)
+    """
+    if not order_id: return False, "NO_ID", 0.0
+    
+    for i in range(retries):
+        try:
+            # We fetch individual order details because orderBook can be large
+            # However, SmartAPI SDK assumes fetching all. 
+            # Let's try fetching individual order if possible, else fetch all.
+            # Using our get_individual_order helper
+            data = get_individual_order(smartApi, order_id)
+            
+            if not data:
+                # Fallback to full order book scan
+                all_orders = fetch_all_orders(smartApi)
+                for order in all_orders:
+                    if order.get('orderid') == order_id:
+                        data = order
+                        break
+            
+            if data:
+                status = data.get('status', '').lower() # complete, open, rejected, cancelled
+                avg_price = float(data.get('averageprice', 0.0))
+                
+                if status == 'rejected':
+                    reason = data.get('text', 'Unknown Rejection')
+                    return False, f"REJECTED: {reason}", 0.0
+                
+                if status == 'cancelled':
+                    return False, "CANCELLED", 0.0
+                
+                if status == 'validation pending':
+                    time.sleep(delay)
+                    continue
+
+                # Open or Complete is Good
+                # Note: SmartAPI returns 'success' or 'complete'
+                return True, status.upper(), avg_price
+            
+            time.sleep(delay)
+            
+        except Exception as e:
+            logger.error(f"Error verifying order {order_id}: {e}")
+            time.sleep(delay)
+            
+    return False, "TIMEOUT_VERIFY", 0.0
