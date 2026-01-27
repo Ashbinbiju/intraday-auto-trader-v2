@@ -43,8 +43,12 @@ def check_buy_condition(df, current_price=None):
     if df is None or df.empty:
         return False, "No Data"
 
-    # Get latest completed candle
-    last_row = df.iloc[-1]
+    # Get latest completed candle (Avoid Repainting by using iloc[-2])
+    # iloc[-1] is usually the forming candle in live data.
+    if len(df) < 2:
+        return False, "Not enough data"
+        
+    last_row = df.iloc[-2]
     
     # Extract Indicators
     ema_20 = last_row.get('EMA_20')
