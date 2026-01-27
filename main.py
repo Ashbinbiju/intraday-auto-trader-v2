@@ -357,8 +357,11 @@ def run_bot_loop(async_loop=None, ws_manager=None):
 
     while True:
         try:
-            current_time = time.strftime("%H:%M") 
-            BOT_STATE["last_update"] = time.strftime("%H:%M:%S")
+            # Fix: Use IST implementation for Logic Checks (Render is UTC)
+            utc_now = datetime.datetime.now(datetime.timezone.utc)
+            ist_now = utc_now + datetime.timedelta(hours=5, minutes=30)
+            current_time = ist_now.strftime("%H:%M")
+            BOT_STATE["last_update"] = ist_now.strftime("%H:%M:%S")
             
             # BROADCAST UPDATE (Heartbeat/Status)
             broadcast_state()
