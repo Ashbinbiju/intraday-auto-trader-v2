@@ -50,16 +50,21 @@ def check_buy_condition(df, current_price=None):
         
     last_row = df.iloc[-2]
     
-    # Extract Indicators
+    # Extract Indicators (Strictly from Confirmed Candle)
     ema_20 = last_row.get('EMA_20')
     vwap = last_row.get('VWAP')
     vol_sma = last_row.get('Volume_SMA_20')
     current_vol = last_row.get('volume')
     open_price = last_row.get('open')
     close_price = last_row.get('close')
+    datetime_str = str(last_row.get('datetime', 'Unknown'))
     
-    # If current_price is provided (live check), override close
-    price = current_price if current_price else close_price
+    # User Request: Price checks must match the candle exactly.
+    # We IGNORE current_price for the Logic Check.
+    price = close_price 
+    
+    # Debug/Sanity Check for User
+    # logger.info(f"Checking Signal on Candle: {datetime_str} | Close: {price} | EMA: {ema_20} | VWAP: {vwap}")
     
     if pd.isna(ema_20) or pd.isna(vwap) or pd.isna(vol_sma):
         return False, "Not enough data for indicators"
