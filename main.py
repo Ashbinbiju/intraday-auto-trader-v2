@@ -141,7 +141,16 @@ def manage_positions(smartApi, token_map):
     logger.info(f"Managing {len(active_symbols)} active positions...")
 
     current_time = time.strftime("%H:%M")
-    square_off_time = config_manager.get("limits", "square_off_time") or "15:15"
+    
+    # Fix: Use IST for Auto Square-Off Check (Render is UTC)
+    try:
+        utc_now = datetime.datetime.now(datetime.timezone.utc)
+        ist_now = utc_now + datetime.timedelta(hours=5, minutes=30)
+        current_time = ist_now.strftime("%H:%M")
+    except Exception:
+        pass # Fallback to local time if datetime fails (unlikely)
+
+    square_off_time = config_manager.get("limits", "square_off_time") or "14:45"
 
     for symbol in active_symbols:
         token = token_map.get(symbol)

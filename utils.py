@@ -34,7 +34,14 @@ def is_market_open():
     Checks if the market is open today.
     Returns: (is_open: bool, reason: str)
     """
-    now = datetime.datetime.now()
+    # Fix: Use IST for Market Check (Render is UTC)
+    try:
+        utc_now = datetime.datetime.now(datetime.timezone.utc)
+        ist_now = utc_now + datetime.timedelta(hours=5, minutes=30)
+        now = ist_now
+    except Exception:
+         now = datetime.datetime.now() # Fallback
+
     today_str = now.strftime("%Y-%m-%d")
     weekday = now.weekday() # 0=Mon, 6=Sun
 
