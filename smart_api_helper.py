@@ -460,6 +460,10 @@ def verify_order_status(smartApi, order_id, retries=5, delay=1):
     """
     if not order_id: return False, "NO_ID", 0.0
     
+    # Handle Dry Run / Simulation
+    if order_id is True or str(order_id).upper() == "DRY_RUN":
+        return True, "DRY_RUN", 0.0
+    
     for i in range(retries):
         try:
             # We fetch individual order details because orderBook can be large
