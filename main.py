@@ -202,54 +202,79 @@ def manage_positions(smartApi, token_map):
                 sl_price = pos['sl']
                 # target_price = pos['target'] # DISABLED Fixed Target
                 
-                # 1. Check Stop Loss (Fixed SL)
+                # UPDATE HIGHEST LTP (For Trailing/Breakeven)
+                if current_ltp > pos.get('highest_ltp', 0):
+                    pos['highest_ltp'] = current_ltp
+
+                # ------------------- EXIT LOGIC PRIORITY -------------------
+                # 1. HARD STOP LOSS (Safety Net)
                 if current_ltp <= sl_price:
                     logger.info(f"{symbol} Hit STOP LOSS at {current_ltp} (SL: {sl_price})")
                     place_sell_order(smartApi, symbol, token, pos['qty'], reason="STOP LOSS")
                     pos['status'] = "CLOSED"
                     pos['exit_price'] = current_ltp
                     pos['exit_reason'] = "STOP_LOSS"
-                    save_state(BOT_STATE) # PERSISTENCE
+                    save_state(BOT_STATE) 
                     continue
-    
-                # 2. Check Target (DISABLED - Replaced by Technical Exit)
-                # if current_ltp >= target_price:
-                #     logger.info(f"{symbol} Hit TARGET at {current_ltp} (TP: {target_price})")
-                #     place_sell_order(smartApi, symbol, token, pos['qty'], reason="TARGET")
-                #     pos['status'] = "CLOSED"
-                #     pos['exit_price'] = current_ltp
-                #     save_state(BOT_STATE) 
-                #     continue
-    
-                # 3. Technical Exit (Profit Booking)
-                # Rule: Exit if Price < EMA20 OR Price < VWAP
+
+                # 1.5 BREAKEVEN LOCK (Enhancement)
+                # If Price moved +1R (Risk), Move SL to Entry
+                original_sl = pos.get('original_sl', sl_price)
+                risk_per_share = entry_price - original_sl
+                if risk_per_share > 0 and not pos.get('is_breakeven_active'):
+                    target_move = entry_price + risk_per_share # +1R
+                    if pos['highest_ltp'] >= target_move:
+                        logger.info(f"🔒 Breakeven Triggered for {symbol}. Moving SL to {entry_price}")
+                        pos['sl'] = entry_price * 1.001 # Slightly above to cover brokerage
+                        pos['is_breakeven_active'] = True
+                        save_state(BOT_STATE)
+                        # We don't continue, checks proceed with new SL
+
+                # 2. TRAILING TECHNICAL EXIT (Strict Candle Close)
+                # Rule: Exit if Closed Price < EMA20 AND Closed Price < VWAP (Dual Confirmation)
                 try:
-                    df_tech = fetch_candle_data(smartApi, symbol, token, "FIFTEEN_MINUTE")
+                    df_tech = fetch_candle_data(smartApi, token, symbol, "FIFTEEN_MINUTE")
                     if df_tech is not None:
                         df_tech = calculate_indicators(df_tech)
                         
-                    if df_tech is not None and not df_tech.empty:
-                        last_row = df_tech.iloc[-1]
-                        ema_20 = last_row.get('EMA_20')
-                        vwap = last_row.get('VWAP')
+                    if df_tech is not None and not df_tech.empty and len(df_tech) >= 2:
+                        confirmed_candle = df_tech.iloc[-2]
+                        close_price = confirmed_candle['close'] 
+                        ema_20 = confirmed_candle.get('EMA_20')
+                        vwap = confirmed_candle.get('VWAP')
                         
                         if ema_20 and vwap and not pd.isna(ema_20) and not pd.isna(vwap):
-                            exit_reason = None
-                            
-                            # Check Breakdown
-                            if current_ltp < ema_20:
-                                exit_reason = f"Breakdown EMA20 ({ema_20:.2f})"
-                            elif current_ltp < vwap:
-                                exit_reason = f"Breakdown VWAP ({vwap:.2f})"
-                            
-                            if exit_reason:
-                                logger.info(f"📉 {symbol} Technical Exit Triggered: {exit_reason}. Closing Position at {current_ltp}")
+                            # DUAL CONFIRMATION: Price must close below BOTH indicators
+                            if close_price < ema_20 and close_price < vwap:
+                                exit_reason = f"Dual Breakdown (Close {close_price} < EMA {ema_20:.2f} & VWAP {vwap:.2f})"
+                                logger.info(f"📉 {symbol} Technical Exit: {exit_reason}.")
                                 place_sell_order(smartApi, symbol, token, pos['qty'], reason="TECH_EXIT")
                                 pos['status'] = "CLOSED"
-                                pos['exit_price'] = current_ltp
+                                pos['exit_price'] = current_ltp 
                                 pos['exit_reason'] = "TECH_EXIT"
                                 save_state(BOT_STATE)
                                 continue
+
+                except Exception as e_tech:
+                     logger.warning(f"Technical Exit Check failed for {symbol}: {e_tech}")
+
+                # 3. TIME-BASED STAGNATION EXIT (Intraday Reality)
+                # If Trade > 60 mins AND Profit < 0.5% -> Exit
+                # This frees up capital from zombie trades.
+                entry_ts = pos.get('entry_time_ts')
+                if entry_ts:
+                    duration_seconds = time.time() - entry_ts
+                    duration_minutes = duration_seconds / 60
+                    current_profit_pct = (current_ltp - entry_price) / entry_price
+                    
+                    if duration_minutes > 60 and current_profit_pct < 0.005: # < 0.5% gain after 1 hour
+                        logger.info(f"💤 Time Exit: {symbol} Stagnant for {int(duration_minutes)}m. Closing.")
+                        place_sell_order(smartApi, symbol, token, pos['qty'], reason="TIME_EXIT")
+                        pos['status'] = "CLOSED"
+                        pos['exit_price'] = current_ltp 
+                        pos['exit_reason'] = "TIME_EXIT"
+                        save_state(BOT_STATE)
+                        continue
 
                 except Exception as e_tech:
                      logger.warning(f"Technical Exit Check failed for {symbol}: {e_tech}")
@@ -530,13 +555,16 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                         entry_price = avg_price if avg_price > 0 else price
                                         
                                         with state_lock:
+                                            sl_price = entry_price * (1 - config_manager.get("risk", "stop_loss_pct"))
                                             BOT_STATE["positions"][symbol] = {
                                                 "symbol": symbol,
                                                 "entry_price": entry_price,
                                                 "qty": quantity,
                                                 "status": "OPEN",
                                                 "entry_time": get_ist_now().strftime("%H:%M"),
-                                                "sl": entry_price * (1 - config_manager.get("risk", "stop_loss_pct")),
+                                                "entry_time_ts": get_ist_now().timestamp(), # Added for Time Exit
+                                                "sl": sl_price,
+                                                "original_sl": sl_price, # Added for Breakeven Calculation (R)
                                                 "highest_ltp": entry_price,
                                                 "is_breakeven_active": False,
                                                 "order_id": orderId

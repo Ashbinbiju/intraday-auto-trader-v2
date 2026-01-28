@@ -62,4 +62,8 @@
     - [x] **WebSocket Migration**: Replaced polling with instant WS updates <!-- id: 55 -->
     - [x] **Mobile Optimization**: Fixed layout overflow, added Bottom Navigation Bar <!-- id: 56 -->
     - [x] **Fix Control Panel Latency**: Async Broadcast for instant Kill Switch/Resume/Exit updates.
+    - [x] **Exit Strategy Upgrade**:
+        - [x] Breakeven Lock (+1R Trigger).
+        - [x] Dual Confirmation (Close < EMA20 AND Close < VWAP).
+        - [x] Time-Based Stagnation Exit (> 60m). Implemented `AsyncScanner` (aiohttp) to reduce market scan time from ~12m to <60s. <!-- id: 46 -->
     - [x] Verify End-to-End Flow (Config -> Bot -> Trade -> Exit) <!-- id: 42 -->
