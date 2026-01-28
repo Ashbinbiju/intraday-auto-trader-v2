@@ -8,3 +8,5 @@ logzero
 websocket-client
 websockets
 python-multipart
+
+aiohttp
