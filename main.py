@@ -276,8 +276,6 @@ def manage_positions(smartApi, token_map):
                         save_state(BOT_STATE)
                         continue
 
-                except Exception as e_tech:
-                     logger.warning(f"Technical Exit Check failed for {symbol}: {e_tech}")
 
         except Exception as e:
             logger.error(f"Error managing position {symbol}: {e}")
