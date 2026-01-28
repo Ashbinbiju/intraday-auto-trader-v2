@@ -1,12 +1,14 @@
 import logging
 import time
 import sys
+import asyncio
 from scraper import fetch_top_performing_sectors, fetch_stocks_in_sector, fetch_market_indices
 from smart_api_helper import get_smartapi_session, fetch_candle_data, load_instrument_map, fetch_net_positions, verify_order_status
 from indicators import calculate_indicators, check_buy_condition
-from utils import is_market_open
+from utils import is_market_open, get_ist_now
 from config import config_manager
 from state_manager import load_state, save_state, start_auto_save, state_lock
+from async_scanner import AsyncScanner
 
 # Configure Logging
 import datetime
@@ -455,65 +457,77 @@ def run_bot_loop(async_loop=None, ws_manager=None):
             target_sectors = sectors[:2] if sectors else []
             BOT_STATE["top_sectors"] = target_sectors
 
+            stocks_to_scan = []
+            seen_symbols = set()
+            
             for sector in target_sectors:
                 # ... check stocks ...
                 stocks = fetch_stocks_in_sector(sector['key'])
                 for stock in stocks:
-                    # ... (Stock checks) ...
                     symbol = stock['symbol']
                     
+                    # Dedup
+                    if symbol in seen_symbols: continue
+                    seen_symbols.add(symbol)
+                    
+                    # Skip if Position Open
                     if symbol in BOT_STATE["positions"] and BOT_STATE["positions"][symbol]["status"] == "OPEN":
                         continue
                         
+                    # Skip if Stock limits hit
                     current_stock_trades = BOT_STATE["stock_trade_counts"].get(symbol, 0)
                     if current_stock_trades >= max_trades_stock:
                         continue
-                        
-                    if BOT_STATE["total_trades_today"] >= max_trades_day:
+                    
+                    # Prepare for Async Scan
+                    stock['sector'] = sector['name']
+                    stocks_to_scan.append(stock)
+
+            if BOT_STATE["total_trades_today"] >= max_trades_day:
+                time.sleep(60)
+                continue
+
+            # --- ASYNC BATCH SCAN ---
+            if stocks_to_scan:
+                # Initialize Scanner with fresh token
+                scanner = AsyncScanner(smartApi.jwt_token)
+                
+                # Run Async Scan (Blocking Call)
+                # Ensure we pass the Token Map for lookup
+                signals = asyncio.run(scanner.scan(stocks_to_scan, token_map))
+                
+                # Process Signals Sequentially (Trade Execution is Sync/Sensitive)
+                for signal_data in signals:
+                    symbol = signal_data['symbol']
+                    message = signal_data['message']
+                    price = signal_data['price']
+                    
+                    # Check Daily Limit again (in case multiple signals triggered)
+                    if BOT_STATE["total_trades_today"] >= max_trades_day: 
                         break
 
-                    token = token_map.get(symbol)
-                    if not token: continue
+                    # Record Signal
+                    if not any(s['symbol'] == symbol and s['time'] == signal_data['time'] for s in BOT_STATE['signals']):
+                        BOT_STATE['signals'].insert(0, signal_data)
+                        if len(BOT_STATE['signals']) > 50: BOT_STATE['signals'] = BOT_STATE['signals'][:50]
+                        broadcast_state()
 
-                    df = fetch_candle_data(smartApi, token, symbol, interval="FIFTEEN_MINUTE", days=10)
-                    if df is None: continue
-                    
-                    df = calculate_indicators(df)
-                    if df is None: continue
-                    
-                    screener_ltp = stock['ltp']
-                    buy_signal, message = check_buy_condition(df, current_price=screener_ltp)
-                    
-                    if buy_signal:
-                        # ... (Record Signal code) ...
-                        # Copy-paste logic from original, but ensure we broadcast after
-                        
-                        signal_data = {
-                            "time": get_ist_now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "symbol": symbol,
-                            "price": screener_ltp,
-                            "message": message,
-                            "sector": sector['name']
-                        }
-                        
-                        if not any(s['symbol'] == symbol and s['time'] == signal_data['time'] for s in BOT_STATE['signals']):
-                            BOT_STATE['signals'].insert(0, signal_data)
-                            if len(BOT_STATE['signals']) > 50: BOT_STATE['signals'] = BOT_STATE['signals'][:50]
-                            broadcast_state()
-
-                        # --- AUTO BUY LOGIC ---
-                        if message.startswith("Strong Buy"):
-                            current_trades = len([p for p in BOT_STATE["positions"].values() if p["status"] == "OPEN"])
-                            if current_trades < max_trades_day:
-                                logger.info(f"🚀 Executing BUY for {symbol} at {screener_ltp}")
+                    # --- AUTO BUY LOGIC (Reused) ---
+                    if message.startswith("Strong Buy"):
+                        current_trades = len([p for p in BOT_STATE["positions"].values() if p["status"] == "OPEN"])
+                        if current_trades < max_trades_day:
+                            logger.info(f"🚀 Executing BUY for {symbol} at {price}")
+                            
+                            token = token_map.get(symbol)
+                            if token:
                                 orderId = place_buy_order(smartApi, symbol, token, quantity)
                                 
-                                # Verify Order Status (Prevent Ghost Trades)
+                                # Verify Order Status
                                 if orderId:
                                     is_success, status, avg_price = verify_order_status(smartApi, orderId)
                                     
                                     if is_success:
-                                        entry_price = avg_price if avg_price > 0 else screener_ltp
+                                        entry_price = avg_price if avg_price > 0 else price
                                         
                                         with state_lock:
                                             BOT_STATE["positions"][symbol] = {
@@ -523,28 +537,23 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                                 "status": "OPEN",
                                                 "entry_time": get_ist_now().strftime("%H:%M"),
                                                 "sl": entry_price * (1 - config_manager.get("risk", "stop_loss_pct")),
-                                                # "target": entry_price * (1 + config_manager.get("risk", "target_pct")), 
                                                 "highest_ltp": entry_price,
                                                 "is_breakeven_active": False,
                                                 "order_id": orderId
                                             }
                                             BOT_STATE["total_trades_today"] += 1
-                                            BOT_STATE["stock_trade_counts"][symbol] = current_stock_trades + 1
+                                            BOT_STATE["stock_trade_counts"][symbol] = current_stock_trades + 1 # Note: Might be stale? No, loop updates local var, but BOT_STATE is single source
+                                            # Update specific stock count
+                                            BOT_STATE["stock_trade_counts"][symbol] = BOT_STATE["stock_trade_counts"].get(symbol, 0) + 1
                                             
-                                        save_state(BOT_STATE) # PERSIST STATE
-                                        broadcast_state() # BROADCAST TRADE
+                                        save_state(BOT_STATE) 
+                                        broadcast_state() 
                                         logger.info(f"✅ Trade Confirmed: {symbol} @ {entry_price}")
                                     else:
                                         logger.error(f"❌ Trade Rejected/Failed Validation: {symbol} Status: {status}")
                                 else:
                                     logger.error(f"❌ Failed to place order for {symbol}")
-                        # ----------------------       
-                                save_state(BOT_STATE)
-
-                    else:
-                        logger.info(f"[INTENT] {symbol} {message}") 
-
-                    time.sleep(1.5) 
+                    # ---------------------------- 
             
             # BROADCAST END of Cycle
             broadcast_state()
