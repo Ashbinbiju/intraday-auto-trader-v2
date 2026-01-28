@@ -367,8 +367,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
     while True:
         try:
             # Fix: Use IST implementation for Logic Checks (Render is UTC)
-            utc_now = datetime.datetime.now(datetime.timezone.utc)
-            ist_now = utc_now + datetime.timedelta(hours=5, minutes=30)
+            ist_now = get_ist_now()
             current_time = ist_now.strftime("%H:%M")
             BOT_STATE["last_update"] = ist_now.strftime("%H:%M:%S")
             
@@ -490,7 +489,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                         # Copy-paste logic from original, but ensure we broadcast after
                         
                         signal_data = {
-                            "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+                            "time": get_ist_now().strftime("%Y-%m-%d %H:%M:%S"),
                             "symbol": symbol,
                             "price": screener_ltp,
                             "message": message,
@@ -522,7 +521,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                                 "entry_price": entry_price,
                                                 "qty": quantity,
                                                 "status": "OPEN",
-                                                "entry_time": time.strftime("%H:%M"),
+                                                "entry_time": get_ist_now().strftime("%H:%M"),
                                                 "sl": entry_price * (1 - config_manager.get("risk", "stop_loss_pct")),
                                                 # "target": entry_price * (1 + config_manager.get("risk", "target_pct")), 
                                                 "highest_ltp": entry_price,

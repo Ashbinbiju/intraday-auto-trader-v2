@@ -66,3 +66,14 @@ def is_market_open():
     # The main loop checks TRADING_END_TIME separately.
 
     return True, "Market Open"
+
+def get_ist_now():
+    """
+    Returns current datetime in IST (UTC+5:30).
+    """
+    try:
+        utc_now = datetime.datetime.now(datetime.timezone.utc)
+        ist_now = utc_now + datetime.timedelta(hours=5, minutes=30)
+        return ist_now
+    except Exception:
+        return datetime.datetime.now() # Fallback
