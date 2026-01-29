@@ -70,13 +70,10 @@ class AsyncScanner:
         async with self.sem:
             return await self.fetch_candle_data(session, symbol, token)
 
-    async def check_market_sentiment(self, session):
+    async def check_market_sentiment(self, session, index_memory=None):
         """
         Checks if Market (Nifty + BankNifty) is Bullish.
-        Uses Sentinel-Grade "Position in Range" Logic:
-        Position = (LTP - Low) / (High - Low)
-        If Range Position > 0.55 for BOTH -> Bullish (3.0% Limit).
-        Else -> Safety (1.5% Limit).
+        Uses Sentinel-Grade "Position in Range" Logic with Local Memory.
         """
         # Valid Tokens found via testing
         indices = [
@@ -86,12 +83,14 @@ class AsyncScanner:
         
         bullish_count = 0
         endpoint = "/rest/secure/angelbroking/market/v1/ltpData"
+        today_date = datetime.now().date().isoformat()
         
         for idx in indices:
+            symbol = idx["symbol"]
             try:
                 payload = {
                     "exchange": "NSE",
-                    "tradingsymbol": idx["symbol"],
+                    "tradingsymbol": symbol,
                     "symboltoken": idx["token"]
                 }
                 async with session.post(self.base_url + endpoint, json=payload, headers=self.headers) as response:
@@ -102,10 +101,27 @@ class AsyncScanner:
                         high = info.get('high')
                         low = info.get('low')
                         
+                        # LOGIC: Check Memory if Data Incomplete
+                        if index_memory is not None:
+                            # 1. Update Memory if we have fresh valid data
+                            if high and low and high > 0:
+                                index_memory[symbol] = {
+                                    "high": high,
+                                    "low": low,
+                                    "date": today_date
+                                }
+                            # 2. Use Memory if current data is bad (but valid LTP exists)
+                            elif (not high or high == 0) and ltp:
+                                mem = index_memory.get(symbol)
+                                if mem and mem.get("date") == today_date:
+                                    high = mem["high"]
+                                    low = mem["low"]
+                                    logger.info(f"Using Cached High/Low for {symbol}: H{high}/L{low}")
+
                         if ltp and high and low:
                             # Edge Case: Dead Session
                             if high == low:
-                                logger.warning(f"Market Sentiment: {idx['symbol']} High == Low. Skipping.")
+                                logger.warning(f"Market Sentiment: {symbol} High == Low. Skipping.")
                                 continue
 
                             # Calculate Position in Range (0.0 to 1.0)
@@ -118,13 +134,13 @@ class AsyncScanner:
                             # Sentinel Threshold: 0.55 (Upper 45%)
                             if range_pos > 0.55:
                                 bullish_count += 1
-                                logger.info(f"Checking Market: {idx['symbol']} is BULLISH (Range Pos: {range_pos:.2f} > 0.55)")
+                                logger.info(f"Checking Market: {symbol} is BULLISH (Range Pos: {range_pos:.2f} > 0.55)")
                             else:
-                                logger.info(f"Checking Market: {idx['symbol']} is WEAK (Range Pos: {range_pos:.2f} <= 0.55)")
+                                logger.info(f"Checking Market: {symbol} is WEAK (Range Pos: {range_pos:.2f} <= 0.55)")
                         else:
-                             logger.warning(f"Incomplete Data for {idx['symbol']}: {info}")
+                             logger.warning(f"Incomplete Data for {symbol}: {info}")
             except Exception as e:
-                logger.warning(f"Failed to check sentiment for {idx['symbol']}: {e}")
+                logger.warning(f"Failed to check sentiment for {symbol}: {e}")
         
         # Condition: BOTH must be Bullish (Upper 45% of Day's Range)
         if bullish_count == 2:
@@ -134,13 +150,14 @@ class AsyncScanner:
             logger.info("⚠️ Market Sentiment: WEAK/CHOPPY. Extension Limit set to 1.5%")
             return 1.5
 
-    async def scan(self, stocks_list, token_map):
+    async def scan(self, stocks_list, token_map, index_memory=None):
         """
         Scans a list of stocks.
         stocks_list: list of dicts [{'symbol': 'INFY', 'ltp': 1500}, ...]
         token_map: dict {'INFY': '1234'}
+        index_memory: dict for caching index high/low
         """
-        start_time = datetime.now()
+        # start_time = datetime.now() # Already imported
         logger.info(f"Starting Async Scan for {len(stocks_list)} stocks...")
         
         signals = []
@@ -148,7 +165,7 @@ class AsyncScanner:
         async with aiohttp.ClientSession(timeout=self.timeout) as session:
             
             # Step 1: Check Market Sentiment (Dynamic Limit)
-            extension_limit = await self.check_market_sentiment(session)
+            extension_limit = await self.check_market_sentiment(session, index_memory)
             
             tasks = []
             for stock in stocks_list:

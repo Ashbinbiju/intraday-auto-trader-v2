@@ -510,16 +510,23 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                 time.sleep(60)
                 continue
 
-            # --- ASYNC BATCH SCAN ---
+            # -- ASYNC BATCH SCAN --
             if stocks_to_scan:
                 # Initialize Scanner with fresh token
                 scanner = AsyncScanner(smartApi.jwt_token)
                 
-                # Run Async Scan (Blocking Call)
-                # Ensure we pass the Token Map for lookup
-                signals = asyncio.run(scanner.scan(stocks_to_scan, token_map))
+                # Fetch Persistent Index Memory (High/Low Cache)
+                # This fixes the "Post-Market 0.0" data issue by remembering valid High/Low from earlier.
+                index_memory = BOT_STATE.setdefault("index_memory", {})
                 
-                # Process Signals Sequentially (Trade Execution is Sync/Sensitive)
+                # Run Async Scan (Blocking Call)
+                # Pass index_memory to allow Scanner to Use/Update it
+                signals = asyncio.run(scanner.scan(stocks_to_scan, token_map, index_memory))
+                
+                # Save Updated Memory (Logic in Scanner updates the dict in-place)
+                save_state(BOT_STATE) 
+                
+                # Process Signals Sequentially
                 for signal_data in signals:
                     symbol = signal_data['symbol']
                     message = signal_data['message']
