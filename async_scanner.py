@@ -73,8 +73,10 @@ class AsyncScanner:
     async def check_market_sentiment(self, session):
         """
         Checks if Market (Nifty + BankNifty) is Bullish.
-        Uses LTP > Open as proxy for Bullishness (Index History not available).
-        Returns extension_limit: 3.0 if Bullish, else 1.5.
+        Uses Sentinel-Grade "Position in Range" Logic:
+        Position = (LTP - Low) / (High - Low)
+        If Range Position > 0.55 for BOTH -> Bullish (3.0% Limit).
+        Else -> Safety (1.5% Limit).
         """
         # Valid Tokens found via testing
         indices = [
@@ -95,30 +97,41 @@ class AsyncScanner:
                 async with session.post(self.base_url + endpoint, json=payload, headers=self.headers) as response:
                     data = await response.json()
                     if data.get('status') is True or str(data.get('status')).lower() == 'true':
-                        # response data: {'exchange': 'NSE', 'tradingsymbol': 'NIFTY', 'symboltoken': '26000', 'open': ..., 'ltp': ...}
                         info = data.get('data', {})
                         ltp = info.get('ltp')
-                        open_price = info.get('open')
+                        high = info.get('high')
+                        low = info.get('low')
                         
-                        if ltp and open_price:
-                            # 0.2% Buffer to avoid noise
-                            buffer_price = open_price * 1.002
-                            if ltp > buffer_price:
+                        if ltp and high and low:
+                            # Edge Case: Dead Session
+                            if high == low:
+                                logger.warning(f"Market Sentiment: {idx['symbol']} High == Low. Skipping.")
+                                continue
+
+                            # Calculate Position in Range (0.0 to 1.0)
+                            range_denominator = high - low
+                            if range_denominator == 0: 
+                                continue # Safety
+                            
+                            range_pos = (ltp - low) / range_denominator
+                            
+                            # Sentinel Threshold: 0.55 (Upper 45%)
+                            if range_pos > 0.55:
                                 bullish_count += 1
-                                logger.info(f"Checking Market: {idx['symbol']} is BULLISH ({ltp} > {buffer_price:.2f} [+0.2%])")
+                                logger.info(f"Checking Market: {idx['symbol']} is BULLISH (Range Pos: {range_pos:.2f} > 0.55)")
                             else:
-                                logger.info(f"Checking Market: {idx['symbol']} is WEAK/CHOPPY ({ltp} < {buffer_price:.2f})")
+                                logger.info(f"Checking Market: {idx['symbol']} is WEAK (Range Pos: {range_pos:.2f} <= 0.55)")
                         else:
                              logger.warning(f"Incomplete Data for {idx['symbol']}: {info}")
             except Exception as e:
                 logger.warning(f"Failed to check sentiment for {idx['symbol']}: {e}")
         
-        # Condition: BOTH must be Bullish
+        # Condition: BOTH must be Bullish (Upper 45% of Day's Range)
         if bullish_count == 2:
-            logger.info("✅ Market Sentiment: BULLISH (>0.2%). Extension Limit set to 3.0%")
+            logger.info("✅ Market Sentiment: BULLISH (Sentinel-Grade). Extension Limit set to 3.0%")
             return 3.0
         else:
-            logger.info("⚠️ Market Sentiment: WEAK/CHOPPY (<0.2% or Failed). Extension Limit set to 1.5%")
+            logger.info("⚠️ Market Sentiment: WEAK/CHOPPY. Extension Limit set to 1.5%")
             return 1.5
 
     async def scan(self, stocks_list, token_map):
