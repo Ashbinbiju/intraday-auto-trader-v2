@@ -101,11 +101,13 @@ class AsyncScanner:
                         open_price = info.get('open')
                         
                         if ltp and open_price:
-                            if ltp > open_price:
+                            # 0.2% Buffer to avoid noise
+                            buffer_price = open_price * 1.002
+                            if ltp > buffer_price:
                                 bullish_count += 1
-                                logger.info(f"Checking Market: {idx['symbol']} is BULLISH ({ltp} > Open {open_price})")
+                                logger.info(f"Checking Market: {idx['symbol']} is BULLISH ({ltp} > {buffer_price:.2f} [+0.2%])")
                             else:
-                                logger.info(f"Checking Market: {idx['symbol']} is BEARISH ({ltp} < Open {open_price})")
+                                logger.info(f"Checking Market: {idx['symbol']} is WEAK/CHOPPY ({ltp} < {buffer_price:.2f})")
                         else:
                              logger.warning(f"Incomplete Data for {idx['symbol']}: {info}")
             except Exception as e:
@@ -113,10 +115,10 @@ class AsyncScanner:
         
         # Condition: BOTH must be Bullish
         if bullish_count == 2:
-            logger.info("✅ Market Sentiment: BULLISH. Extension Limit set to 3.0%")
+            logger.info("✅ Market Sentiment: BULLISH (>0.2%). Extension Limit set to 3.0%")
             return 3.0
         else:
-            logger.info("⚠️ Market Sentiment: WEAK/CHOPPY. Extension Limit set to 1.5%")
+            logger.info("⚠️ Market Sentiment: WEAK/CHOPPY (<0.2% or Failed). Extension Limit set to 1.5%")
             return 1.5
 
     async def scan(self, stocks_list, token_map):
