@@ -35,10 +35,11 @@ def calculate_indicators(df):
     return df
 
 
-def check_buy_condition(df, current_price=None):
+def check_buy_condition(df, current_price=None, extension_limit=1.5):
     """
     Checks the Buy condition on the latest closed candle or live price.
     Condition: Price > VWAP AND Price > EMA 20 AND Green Candle AND Volume > 1.5x Avg
+    extension_limit: Max allowed % distance from EMA 20 (dynamic).
     """
     if df is None or df.empty:
         return False, "No Data"
@@ -91,8 +92,8 @@ def check_buy_condition(df, current_price=None):
     if not reasons:
         # Late Entry Protection (Guard)
         ema_dist = ((price - ema_20) / ema_20) * 100
-        if ema_dist > 1.5:
-             return False, f"Late Entry Guard: Price is {ema_dist:.2f}% > EMA20 (Max 1.5%)"
+        if ema_dist > extension_limit:
+             return False, f"Late Entry Guard: Price is {ema_dist:.2f}% > EMA20 (Max {extension_limit}%)"
 
         return True, f"Strong Buy: Price > VWAP/EMA20 + Vol Spike ({int(current_vol)}) + Green Candle"
     

@@ -70,6 +70,56 @@ class AsyncScanner:
         async with self.sem:
             return await self.fetch_candle_data(session, symbol, token)
 
+    async def check_market_sentiment(self, session):
+        """
+        Checks if Market (Nifty + BankNifty) is Bullish (Price > VWAP).
+        Returns extension_limit: 3.0 if Bullish, else 1.5.
+        """
+        # Tokens for Indices (NSE)
+        # Nifty 50: 99926000, Nifty Bank: 99926009
+        indices = [
+            {"symbol": "NIFTY", "token": "99926000"},
+            {"symbol": "BANKNIFTY", "token": "99926009"}
+        ]
+        
+        bullish_count = 0
+        
+        for idx in indices:
+            try:
+                # Re-use fetch logic but for Index
+                _, raw_data = await self.fetch_candle_data(session, idx["symbol"], idx["token"])
+                if raw_data:
+                    df = pd.DataFrame(raw_data, columns=['datetime', 'open', 'high', 'low', 'close', 'volume'])
+                    df['datetime'] = pd.to_datetime(df['datetime'])
+                    df['close'] = df['close'].astype(float)
+                    df['volume'] = df['volume'].astype(int)
+                    df['high'] = df['high'].astype(float)
+                    df['low'] = df['low'].astype(float)
+                    
+                    # Calculate VWAP
+                    df = calculate_indicators(df)
+                    
+                    if not df.empty:
+                        last = df.iloc[-1] # Use live candle for sentiment
+                        vwap = last.get('VWAP')
+                        price = last.get('close')
+                        
+                        if vwap and price > vwap:
+                            bullish_count += 1
+                            logger.info(f"Checking Market: {idx['symbol']} is BULLISH ({price} > {vwap:.2f})")
+                        else:
+                            logger.info(f"Checking Market: {idx['symbol']} is BEARISH ({price} < {vwap:.2f})")
+            except Exception as e:
+                logger.warning(f"Failed to check sentiment for {idx['symbol']}: {e}")
+        
+        # Condition: BOTH must be > VWAP
+        if bullish_count == 2:
+            logger.info("✅ Market Sentiment: BULLISH. Extension Limit set to 3.0%")
+            return 3.0
+        else:
+            logger.info("⚠️ Market Sentiment: WEAK/CHOPPY. Extension Limit set to 1.5%")
+            return 1.5
+
     async def scan(self, stocks_list, token_map):
         """
         Scans a list of stocks.
@@ -82,6 +132,10 @@ class AsyncScanner:
         signals = []
         
         async with aiohttp.ClientSession(timeout=self.timeout) as session:
+            
+            # Step 1: Check Market Sentiment (Dynamic Limit)
+            extension_limit = await self.check_market_sentiment(session)
+            
             tasks = []
             for stock in stocks_list:
                 symbol = stock['symbol']
@@ -110,7 +164,7 @@ class AsyncScanner:
                         
                         # Check Buy Condition (Strict Closed Candle)
                         screener_ltp = 0.0 # Placeholder, indicator ignores it now
-                        buy_signal, message = check_buy_condition(df, current_price=screener_ltp)
+                        buy_signal, message = check_buy_condition(df, current_price=screener_ltp, extension_limit=extension_limit)
                         
                         if buy_signal:
                             logger.info(f"🚀 Signal Found: {symbol} - {message}")
