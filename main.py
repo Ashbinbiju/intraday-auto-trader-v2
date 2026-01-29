@@ -477,7 +477,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                 # Broaden search or just wait? For now, wait.
                 pass
             
-            target_sectors = sectors[:2] if sectors else []
+            target_sectors = sectors[:4] if sectors else []
             BOT_STATE["top_sectors"] = target_sectors
 
             stocks_to_scan = []
