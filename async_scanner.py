@@ -127,9 +127,13 @@ class AsyncScanner:
                                 'sector': sector_name,
                                 'time': get_ist_now().strftime("%Y-%m-%d %H:%M:%S")
                             })
+                        else:
+                            # Log specific rejection reasons for debugging (like Late Entry)
+                            if "Late Entry Guard" in message:
+                                logger.info(f"🚫 Skipped {symbol}: {message}")
                             
                     except Exception as e:
-                        # logger.error(f"Processing Error {symbol}: {e}")
+                        logger.error(f"Processing Error {symbol}: {e}")
                         continue
 
         duration = (datetime.now() - start_time).total_seconds()
