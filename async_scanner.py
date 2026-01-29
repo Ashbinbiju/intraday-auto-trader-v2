@@ -72,47 +72,46 @@ class AsyncScanner:
 
     async def check_market_sentiment(self, session):
         """
-        Checks if Market (Nifty + BankNifty) is Bullish (Price > VWAP).
+        Checks if Market (Nifty + BankNifty) is Bullish.
+        Uses LTP > Open as proxy for Bullishness (Index History not available).
         Returns extension_limit: 3.0 if Bullish, else 1.5.
         """
-        # Tokens for Indices (NSE)
-        # Nifty 50: 99926000, Nifty Bank: 99926009
+        # Valid Tokens found via testing
         indices = [
-            {"symbol": "NIFTY", "token": "99926000"},
-            {"symbol": "BANKNIFTY", "token": "99926009"}
+            {"symbol": "NIFTY", "token": "26000"},
+            {"symbol": "BANKNIFTY", "token": "26009"}
         ]
         
         bullish_count = 0
+        endpoint = "/rest/secure/angelbroking/market/v1/ltpData"
         
         for idx in indices:
             try:
-                # Re-use fetch logic but for Index
-                _, raw_data = await self.fetch_candle_data(session, idx["symbol"], idx["token"])
-                if raw_data:
-                    df = pd.DataFrame(raw_data, columns=['datetime', 'open', 'high', 'low', 'close', 'volume'])
-                    df['datetime'] = pd.to_datetime(df['datetime'])
-                    df['close'] = df['close'].astype(float)
-                    df['volume'] = df['volume'].astype(int)
-                    df['high'] = df['high'].astype(float)
-                    df['low'] = df['low'].astype(float)
-                    
-                    # Calculate VWAP
-                    df = calculate_indicators(df)
-                    
-                    if not df.empty:
-                        last = df.iloc[-1] # Use live candle for sentiment
-                        vwap = last.get('VWAP')
-                        price = last.get('close')
+                payload = {
+                    "exchange": "NSE",
+                    "tradingsymbol": idx["symbol"],
+                    "symboltoken": idx["token"]
+                }
+                async with session.post(self.base_url + endpoint, json=payload, headers=self.headers) as response:
+                    data = await response.json()
+                    if data.get('status') is True or str(data.get('status')).lower() == 'true':
+                        # response data: {'exchange': 'NSE', 'tradingsymbol': 'NIFTY', 'symboltoken': '26000', 'open': ..., 'ltp': ...}
+                        info = data.get('data', {})
+                        ltp = info.get('ltp')
+                        open_price = info.get('open')
                         
-                        if vwap and price > vwap:
-                            bullish_count += 1
-                            logger.info(f"Checking Market: {idx['symbol']} is BULLISH ({price} > {vwap:.2f})")
+                        if ltp and open_price:
+                            if ltp > open_price:
+                                bullish_count += 1
+                                logger.info(f"Checking Market: {idx['symbol']} is BULLISH ({ltp} > Open {open_price})")
+                            else:
+                                logger.info(f"Checking Market: {idx['symbol']} is BEARISH ({ltp} < Open {open_price})")
                         else:
-                            logger.info(f"Checking Market: {idx['symbol']} is BEARISH ({price} < {vwap:.2f})")
+                             logger.warning(f"Incomplete Data for {idx['symbol']}: {info}")
             except Exception as e:
                 logger.warning(f"Failed to check sentiment for {idx['symbol']}: {e}")
         
-        # Condition: BOTH must be > VWAP
+        # Condition: BOTH must be Bullish
         if bullish_count == 2:
             logger.info("✅ Market Sentiment: BULLISH. Extension Limit set to 3.0%")
             return 3.0
