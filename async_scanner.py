@@ -73,62 +73,56 @@ class AsyncScanner:
     async def check_market_sentiment(self, session, index_memory=None):
         """
         Checks if Market (Nifty + BankNifty) is Bullish.
-        Uses Sentinel-Grade "Position in Range" Logic with Local Memory.
+        Uses 'brkpoint.in' API for reliable Sentinel Data.
         """
-        indices = [
-            {"symbol": "NIFTY", "token": "26000"},
-            {"symbol": "BANKNIFTY", "token": "26009"}
-        ]
-        
         bullish_count = 0
-        endpoint = "/rest/secure/angelbroking/market/v1/ltpData"
+        endpoint = "https://brkpoint.in/api/indexscan"
         today_date = datetime.now().date().isoformat()
         regime_details = []
         
-        for idx in indices:
-            symbol = idx["symbol"]
-            try:
-                payload = {
-                    "exchange": "NSE",
-                    "tradingsymbol": symbol,
-                    "symboltoken": idx["token"]
-                }
-                async with session.post(self.base_url + endpoint, json=payload, headers=self.headers) as response:
+        try:
+            # External API Call
+            async with session.get(endpoint) as response:
+                if response.status == 200:
                     data = await response.json()
-                    status = data.get('status')
-                    if status is True or str(status).lower() == 'true':
-                        info = data.get('data', {})
-                        ltp = info.get('ltp')
-                        high = info.get('high')
-                        low = info.get('low')
+                    
+                    # Map API Response to our Logic
+                    # Need NIFTY 50 and Bank NIFTY
+                    target_indices = {
+                        "NIFTY 50": "NIFTY",
+                        "Bank NIFTY": "BANKNIFTY"
+                    }
+                    
+                    found_indices = 0
+                    
+                    for item in data:
+                        api_name = item.get("index")
+                        symbol = target_indices.get(api_name)
                         
-                        source = "API"
+                        if symbol:
+                            found_indices += 1
+                            ltp = item.get("price")
+                            # Use today_15m_high/low as proxy for Day High/Low (Robust source)
+                            high = item.get("today_15m_high")
+                            low = item.get("today_15m_low")
+                            
+                            # Fallback if 15m keys missing, try others or fail safe
+                            if not high or not low:
+                                high = item.get("prev_day_high") # Safety Fallback if today's data is null (rare)
+                                low = item.get("prev_day_low")
 
-                        # LOGIC: Check Memory if Data Incomplete
-                        if index_memory is not None:
-                            # 1. Update Memory if we have fresh valid data
-                            if high and low and high > 0:
-                                old_mem = index_memory.get(symbol)
-                                if not old_mem or old_mem.get("date") != today_date:
-                                    logger.info(f"[INDEX_MEMORY] {symbol} Initialized for {today_date}: H{high}/L{low}")
-                                elif old_mem['high'] != high or old_mem['low'] != low:
-                                    logger.info(f"[INDEX_MEMORY] {symbol} Updated: H{old_mem['high']}->{high} (source=API)")
+                            if not ltp or not high or not low:
+                                regime_details.append(f"{symbol}:BAD_DATA")
+                                continue
 
+                            # Update Memory (for logging consistency/backup mostly)
+                            if index_memory is not None:
                                 index_memory[symbol] = {
                                     "high": high,
                                     "low": low,
                                     "date": today_date
                                 }
-                            # 2. Use Memory if current data is bad (but valid LTP exists)
-                            elif (not high or high == 0) and ltp:
-                                mem = index_memory.get(symbol)
-                                if mem and mem.get("date") == today_date:
-                                    high = mem["high"]
-                                    low = mem["low"]
-                                    source = "MEMORY"
-                                    logger.warning(f"[DATA_WARNING] {symbol} High/Low=0.0 -> Using Cached Memory (H{high}/L{low})")
 
-                        if ltp and high and low:
                             # Edge Case: Dead Session
                             if high == low:
                                 regime_details.append(f"{symbol}:DEAD_SESSION")
@@ -137,26 +131,38 @@ class AsyncScanner:
                             # Calculate Position
                             numerator = ltp - low
                             denominator = high - low
-                            if denominator == 0: continue
+                            
+                            if denominator == 0: 
+                                continue
                             
                             range_pos = numerator / denominator
                             regime_details.append(f"{symbol} pos={range_pos:.2f}")
                             
                             if range_pos > 0.55:
                                 bullish_count += 1
-                        else:
-                             regime_details.append(f"{symbol}:INCOMPLETE({source})")
-            except Exception as e:
-                logger.warning(f"Failed to check sentiment for {symbol}: {e}")
+                    
+                    if found_indices < 2:
+                        logger.warning("External API did not return both indices.")
+                        return 1.5 # Safety
+                        
+                else:
+                    logger.warning(f"External API Failed: {response.status}")
+                    return 1.5
+
+        except Exception as e:
+            logger.error(f"Sentiment Check Failed: {e}")
+            return 1.5
         
         # Final Decision
         if bullish_count == 2:
             logger.info(f"[REGIME] {' '.join(regime_details)} -> TREND_MODE (EXT=3.0)")
             return 3.0
         else:
-            reason = "WEAK_RANGE" if len(regime_details) == 2 else "DATA_ISSUE"
+            reason = "WEAK_RANGE" if len(regime_details) >= 1 else "DATA_ISSUE"
             logger.info(f"[REGIME] {' '.join(regime_details)} -> SAFETY_MODE (EXT=1.5) reason={reason}")
             return 1.5
+        
+
 
     async def scan(self, stocks_list, token_map, index_memory=None):
         """
