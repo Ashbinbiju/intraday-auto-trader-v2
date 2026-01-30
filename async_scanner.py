@@ -75,7 +75,6 @@ class AsyncScanner:
         Checks if Market (Nifty + BankNifty) is Bullish.
         Uses Sentinel-Grade "Position in Range" Logic with Local Memory.
         """
-        # Valid Tokens found via testing
         indices = [
             {"symbol": "NIFTY", "token": "26000"},
             {"symbol": "BANKNIFTY", "token": "26009"}
@@ -84,6 +83,7 @@ class AsyncScanner:
         bullish_count = 0
         endpoint = "/rest/secure/angelbroking/market/v1/ltpData"
         today_date = datetime.now().date().isoformat()
+        regime_details = []
         
         for idx in indices:
             symbol = idx["symbol"]
@@ -95,16 +95,25 @@ class AsyncScanner:
                 }
                 async with session.post(self.base_url + endpoint, json=payload, headers=self.headers) as response:
                     data = await response.json()
-                    if data.get('status') is True or str(data.get('status')).lower() == 'true':
+                    status = data.get('status')
+                    if status is True or str(status).lower() == 'true':
                         info = data.get('data', {})
                         ltp = info.get('ltp')
                         high = info.get('high')
                         low = info.get('low')
                         
+                        source = "API"
+
                         # LOGIC: Check Memory if Data Incomplete
                         if index_memory is not None:
                             # 1. Update Memory if we have fresh valid data
                             if high and low and high > 0:
+                                old_mem = index_memory.get(symbol)
+                                if not old_mem or old_mem.get("date") != today_date:
+                                    logger.info(f"[INDEX_MEMORY] {symbol} Initialized for {today_date}: H{high}/L{low}")
+                                elif old_mem['high'] != high or old_mem['low'] != low:
+                                    logger.info(f"[INDEX_MEMORY] {symbol} Updated: H{old_mem['high']}->{high} (source=API)")
+
                                 index_memory[symbol] = {
                                     "high": high,
                                     "low": low,
@@ -116,38 +125,37 @@ class AsyncScanner:
                                 if mem and mem.get("date") == today_date:
                                     high = mem["high"]
                                     low = mem["low"]
-                                    logger.info(f"Using Cached High/Low for {symbol}: H{high}/L{low}")
+                                    source = "MEMORY"
+                                    logger.warning(f"[DATA_WARNING] {symbol} High/Low=0.0 -> Using Cached Memory (H{high}/L{low})")
 
                         if ltp and high and low:
                             # Edge Case: Dead Session
                             if high == low:
-                                logger.warning(f"Market Sentiment: {symbol} High == Low. Skipping.")
+                                regime_details.append(f"{symbol}:DEAD_SESSION")
                                 continue
 
-                            # Calculate Position in Range (0.0 to 1.0)
-                            range_denominator = high - low
-                            if range_denominator == 0: 
-                                continue # Safety
+                            # Calculate Position
+                            numerator = ltp - low
+                            denominator = high - low
+                            if denominator == 0: continue
                             
-                            range_pos = (ltp - low) / range_denominator
+                            range_pos = numerator / denominator
+                            regime_details.append(f"{symbol} pos={range_pos:.2f}")
                             
-                            # Sentinel Threshold: 0.55 (Upper 45%)
                             if range_pos > 0.55:
                                 bullish_count += 1
-                                logger.info(f"Checking Market: {symbol} is BULLISH (Range Pos: {range_pos:.2f} > 0.55)")
-                            else:
-                                logger.info(f"Checking Market: {symbol} is WEAK (Range Pos: {range_pos:.2f} <= 0.55)")
                         else:
-                             logger.warning(f"Incomplete Data for {symbol}: {info}")
+                             regime_details.append(f"{symbol}:INCOMPLETE({source})")
             except Exception as e:
                 logger.warning(f"Failed to check sentiment for {symbol}: {e}")
         
-        # Condition: BOTH must be Bullish (Upper 45% of Day's Range)
+        # Final Decision
         if bullish_count == 2:
-            logger.info("✅ Market Sentiment: BULLISH (Sentinel-Grade). Extension Limit set to 3.0%")
+            logger.info(f"[REGIME] {' '.join(regime_details)} -> TREND_MODE (EXT=3.0)")
             return 3.0
         else:
-            logger.info("⚠️ Market Sentiment: WEAK/CHOPPY. Extension Limit set to 1.5%")
+            reason = "WEAK_RANGE" if len(regime_details) == 2 else "DATA_ISSUE"
+            logger.info(f"[REGIME] {' '.join(regime_details)} -> SAFETY_MODE (EXT=1.5) reason={reason}")
             return 1.5
 
     async def scan(self, stocks_list, token_map, index_memory=None):
@@ -213,9 +221,10 @@ class AsyncScanner:
                                 'time': get_ist_now().strftime("%Y-%m-%d %H:%M:%S")
                             })
                         else:
-                            # Log specific rejection reasons for debugging (like Late Entry)
-                            if "Late Entry Guard" in message:
-                                logger.info(f"🚫 Skipped {symbol}: {message}")
+                            # Log specific rejection reasons for debugging (like Extension Limit)
+                            if "Extension" in message or "Late Entry" in message:
+                                regime = "TREND" if extension_limit == 3.0 else "SAFETY"
+                                logger.info(f"[ENTRY_GUARD] {symbol} skipped: {message} (REGIME={regime})")
                             
                     except Exception as e:
                         logger.error(f"Processing Error {symbol}: {e}")
