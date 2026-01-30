@@ -165,7 +165,7 @@ class AsyncScanner:
         token_map: dict {'INFY': '1234'}
         index_memory: dict for caching index high/low
         """
-        # start_time = datetime.now() # Already imported
+        start_time = datetime.now()
         logger.info(f"Starting Async Scan for {len(stocks_list)} stocks...")
         
         signals = []
