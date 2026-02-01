@@ -11,6 +11,13 @@
         "sl_buffer_pct": 0.002,
         "min_risk_reward": 1.5
     },
+    "position_sizing": {
+        "mode": "dynamic",
+        "risk_per_trade_pct": 1.0,
+        "max_position_size_pct": 20.0,
+        "min_sl_distance_pct": 0.6,
+        "paper_trading_balance": 100000
+    },
     "limits": {
         "max_trades_per_day": 1,
         "max_trades_per_stock": 3,

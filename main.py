@@ -130,6 +130,113 @@ def place_sell_order(smartApi, symbol, token, qty, reason="EXIT"):
         logger.error(f"SELL Order Failed for {symbol}: {e}")
         return None
 
+def get_account_balance(smartApi, dry_run):
+    """
+    Fetches account balance for position sizing.
+    For paper trading, uses configured virtual balance.
+    For live trading, fetches from Angel One API.
+    """
+    if dry_run:
+        balance = config_manager.get("position_sizing", "paper_trading_balance") or 100000
+        logger.info(f"📊 [PAPER TRADING] Using virtual balance: ₹{balance:,.0f}")
+        return float(balance)
+    
+    try:
+        rmsLimit = smartApi.rmsLimit()
+        if rmsLimit and 'data' in rmsLimit:
+            available_balance = rmsLimit['data'].get('availablecash', 0)
+            logger.info(f"📊 [LIVE] Account balance fetched: ₹{float(available_balance):,.0f}")
+            return float(available_balance)
+        else:
+            logger.warning("Unable to fetch balance, using fallback: ₹100,000")
+            return 100000.0
+    except Exception as e:
+        logger.error(f"Balance fetch failed: {e}, using fallback: ₹100,000")
+        return 100000.0
+
+def floor_to_lot_size(qty, symbol):
+    """
+    Rounds down quantity to valid lot size.
+    TODO: Add lot size mapping for F&O stocks if needed.
+    For now, equity trades allow any quantity.
+    """
+    # For equity intraday, lot size = 1 (no restrictions)
+    # If you trade F&O later, add lot size mapping here
+    return max(1, int(qty))
+
+def calculate_position_size(entry_price, sl_price, balance, risk_pct, max_position_pct, min_sl_pct, symbol):
+    """
+    Calculates dynamic position size with all safety checks.
+    
+    🔴 Critical Safety Checks:
+    1. Zero SL distance protection
+    2. Minimum SL distance enforcement (0.6%)
+    3. Maximum position size limit (20%)
+    4. Lot size rounding
+    5. Comprehensive logging
+    
+    Args:
+        entry_price: Entry price for the stock
+        sl_price: Stop loss price
+        balance: Account balance
+        risk_pct: Risk per trade as % of balance (e.g., 1.0 for 1%)
+        max_position_pct: Max position size as % of balance (e.g., 20.0)
+        min_sl_pct: Minimum SL distance % (e.g., 0.6)
+        symbol: Stock symbol for logging
+    
+    Returns:
+        int: Quantity to buy (0 if invalid)
+    """
+    # 🔴 FIX 1: Zero SL distance protection
+    sl_distance = abs(entry_price - sl_price)
+    if sl_distance <= 0:
+        logger.warning(f"❌ {symbol}: Invalid SL distance (Entry={entry_price}, SL={sl_price}), skipping trade")
+        return 0
+    
+    # 🟢 FIX 4: Minimum SL distance enforcement
+    sl_distance_pct = (sl_distance / entry_price) * 100
+    if sl_distance_pct < min_sl_pct:
+        logger.warning(
+            f"❌ {symbol}: SL too tight ({sl_distance_pct:.2f}% < {min_sl_pct}%), "
+            f"skipping trade to prevent sizing explosion"
+        )
+        return 0
+    
+    # Calculate risk amount
+    risk_amount = balance * (risk_pct / 100)
+    
+    # Position size formula: Risk Amount / SL Distance
+    qty = int(risk_amount / sl_distance)
+    
+    # Enforce maximum position size (prevent overexposure)
+    max_qty = int((balance * max_position_pct / 100) / entry_price)
+    qty = min(qty, max_qty)
+    
+    # 🟠 FIX 2: Lot size rounding
+    qty = floor_to_lot_size(qty, symbol)
+    
+    # Ensure at least 1 share (if we got this far)
+    if qty <= 0:
+        logger.warning(f"❌ {symbol}: Calculated qty={qty}, skipping trade")
+        return 0
+    
+    # Calculate actual exposure and risk
+    exposure = qty * entry_price
+    actual_risk = qty * sl_distance
+    exposure_pct = (exposure / balance) * 100
+    actual_risk_pct = (actual_risk / balance) * 100
+    
+    # 4️⃣ FIX 5: Comprehensive logging
+    logger.info(
+        f"📊 Position Sizing | {symbol} | "
+        f"Bal=₹{balance:,.0f} | Risk={risk_pct}% (₹{risk_amount:,.0f}) | "
+        f"SL={sl_distance:.2f} ({sl_distance_pct:.2f}%) | "
+        f"Qty={qty} | Exposure=₹{exposure:,.0f} ({exposure_pct:.1f}%) | "
+        f"Actual Risk=₹{actual_risk:,.0f} ({actual_risk_pct:.2f}%)"
+    )
+    
+    return qty
+
 def calculate_structure_based_sl(df, entry_price, vwap, ema20):
     """
     Calculate Stop-Loss based on nearest market structure.
@@ -751,6 +858,30 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                     sl_price = price * (1 - config_manager.get("risk", "stop_loss_pct"))
                                     target_price = price * (1 + config_manager.get("risk", "target_pct"))
                                     logger.info(f"Using percentage-based risk (fallback mode)")
+                                
+                                # === POSITION SIZING ===
+                                sizing_mode = config_manager.get("position_sizing", "mode") or "dynamic"
+                                dry_run = config_manager.get("general", "dry_run")
+                                
+                                if sizing_mode == "dynamic":
+                                    # Dynamic position sizing based on account balance and SL
+                                    balance = get_account_balance(smartApi, dry_run)
+                                    risk_pct = config_manager.get("position_sizing", "risk_per_trade_pct") or 1.0
+                                    max_pos_pct = config_manager.get("position_sizing", "max_position_size_pct") or 20.0
+                                    min_sl_pct = config_manager.get("position_sizing", "min_sl_distance_pct") or 0.6
+                                    
+                                    quantity = calculate_position_size(
+                                        price, sl_price, balance, risk_pct, max_pos_pct, min_sl_pct, symbol
+                                    )
+                                    
+                                    # Safety check: Skip trade if qty is 0 (failed validation)
+                                    if quantity <= 0:
+                                        logger.warning(f"❌ Trade SKIPPED: {symbol} | Position sizing returned qty=0")
+                                        continue
+                                else:
+                                    # Fixed quantity mode (backwards compatible)
+                                    quantity = config_manager.get("general", "quantity") or 1
+                                    logger.info(f"📊 Fixed Quantity Mode: {quantity} shares")
                                 
                                 # Place the order
                                 orderId = place_buy_order(smartApi, symbol, token, quantity)
