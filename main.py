@@ -681,11 +681,29 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                 use_structure = config_manager.get("structure_risk", "use_structure_based") or False
                                 
                                 if use_structure:
-                                    # Fetch 5-minute candles for structure analysis (matches scanner)
+                                    # STEP 1: Re-validate 15M Bias (The Golden Rule)
+                                    # Signals could be queued, market may have changed since scanner ran
+                                    df_15m_recheck = fetch_candle_data(smartApi, token, symbol, "FIFTEEN_MINUTE")
+                                    
+                                    if df_15m_recheck is None or df_15m_recheck.empty:
+                                        logger.warning(f"❌ Skipping {symbol}: Unable to fetch 15M data for re-validation")
+                                        continue
+                                    
+                                    from indicators import check_15m_bias, calculate_indicators
+                                    df_15m_recheck = calculate_indicators(df_15m_recheck)
+                                    bias_15m, bias_reason = check_15m_bias(df_15m_recheck)
+                                    
+                                    if bias_15m != 'BULLISH':
+                                        logger.warning(f"❌ Trade REJECTED: {symbol} | 15M bias changed to {bias_15m} ({bias_reason})")
+                                        continue
+                                    
+                                    logger.info(f"✅ 15M Bias Confirmed: {symbol} | {bias_reason}")
+                                    
+                                    # STEP 2: Fetch 5-minute candles for structure analysis
                                     df_risk = fetch_candle_data(smartApi, token, symbol, "FIVE_MINUTE")
                                     
                                     if df_risk is None or df_risk.empty:
-                                        logger.warning(f"❌ Skipping {symbol}: Unable to fetch candle data for risk calculation")
+                                        logger.warning(f"❌ Skipping {symbol}: Unable to fetch 5M candle data for risk calculation")
                                         continue
                                     
                                     # Calculate indicators (VWAP, EMAs)
