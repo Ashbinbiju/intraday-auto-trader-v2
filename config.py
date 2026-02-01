@@ -1,6 +1,7 @@
 import json
 import os
 import logging
+from database import get_remote_config, save_remote_config
 
 CONFIG_FILE = "config.json"
 
@@ -20,6 +21,13 @@ DEFAULT_CONFIG = {
         "quantity": 1,
         "check_interval": 300,       # 5 minutes
         "dry_run": True
+    },
+    "position_sizing": {
+        "mode": "dynamic",
+        "risk_per_trade_pct": 1.0,
+        "max_position_size_pct": 20.0,
+        "min_sl_distance_pct": 0.6,
+        "paper_trading_balance": 100000
     }
 }
 
@@ -29,18 +37,29 @@ class ConfigManager:
         self.load_config()
 
     def load_config(self):
+        # 1. Try Supabase First
+        remote_config = get_remote_config()
+        if remote_config:
+            self.config = self.update_nested(self.config, remote_config)
+            logging.info("✅ Config Loaded from Supabase")
+            # Sync local file
+            self.save_local() 
+            return
+
+        # 2. Fallback to Local File
         if os.path.exists(CONFIG_FILE):
             try:
                 with open(CONFIG_FILE, "r") as f:
                     saved_config = json.load(f)
-                    # Merge saved config with default (for new keys)
-                    self.update_nested(self.config, saved_config)
+                    self.config = self.update_nested(self.config, saved_config)
+                    logging.info("✅ Config Loaded from Local File")
             except Exception as e:
-                logging.error(f"Error loading config: {e}")
+                logging.error(f"Error loading local config: {e}")
         else:
             self.save_config()
 
     def update_nested(self, d, u):
+        """Recursively update dictionary d with values from u."""
         for k, v in u.items():
             if isinstance(v, dict):
                 d[k] = self.update_nested(d.get(k, {}), v)
@@ -49,11 +68,17 @@ class ConfigManager:
         return d
 
     def save_config(self):
+        """Saves config to both Local File and Supabase."""
+        self.save_local()
+        save_remote_config(self.config)
+
+    def save_local(self):
+        """Saves config to local disk only."""
         try:
             with open(CONFIG_FILE, "w") as f:
                 json.dump(self.config, f, indent=4)
         except Exception as e:
-            logging.error(f"Error saving config: {e}")
+            logging.error(f"Error saving local config: {e}")
 
     def get(self, *keys):
         """Get a value by traversing keys."""

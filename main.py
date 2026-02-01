@@ -3,12 +3,14 @@ import time
 import sys
 import asyncio
 import pandas as pd
+import threading # Added for log_trade_to_db
 from scraper import fetch_top_performing_sectors, fetch_stocks_in_sector, fetch_market_indices
 from smart_api_helper import get_smartapi_session, fetch_candle_data, load_instrument_map, fetch_net_positions, verify_order_status
 from indicators import calculate_indicators, check_buy_condition
 from utils import is_market_open, get_ist_now
 from config import config_manager
 from state_manager import load_state, save_state, start_auto_save, state_lock
+from database import log_trade_to_db
 from async_scanner import AsyncScanner
 
 # Configure Logging
@@ -401,6 +403,13 @@ def manage_positions(smartApi, token_map):
                         pos['status'] = "CLOSED"
                         pos['exit_price'] = exit_price  # Actual market price
                         pos['exit_reason'] = "TIME_EXIT"
+                        
+                        # LOG TO SUPABASE
+                        trade_log = pos.copy()
+                        trade_log['pnl'] = (exit_price - pos['entry_price']) * pos['qty']
+                        trade_log['exit_time'] = datetime.datetime.now().isoformat()
+                        threading.Thread(target=log_trade_to_db, args=(trade_log,)).start()
+
                         save_state(BOT_STATE)
                 continue
 
@@ -444,6 +453,13 @@ def manage_positions(smartApi, token_map):
                     pos['status'] = "CLOSED"
                     pos['exit_price'] = current_ltp
                     pos['exit_reason'] = "STOP_LOSS"
+                    
+                    # LOG TO SUPABASE
+                    trade_log = pos.copy()
+                    trade_log['pnl'] = (current_ltp - entry_price) * pos['qty']
+                    trade_log['exit_time'] = datetime.datetime.now().isoformat()
+                    threading.Thread(target=log_trade_to_db, args=(trade_log,)).start()
+
                     save_state(BOT_STATE) 
                     continue
 
@@ -482,6 +498,13 @@ def manage_positions(smartApi, token_map):
                                 pos['status'] = "CLOSED"
                                 pos['exit_price'] = current_ltp 
                                 pos['exit_reason'] = "TECH_EXIT"
+                                
+                                # LOG TO SUPABASE
+                                trade_log = pos.copy()
+                                trade_log['pnl'] = (current_ltp - entry_price) * pos['qty']
+                                trade_log['exit_time'] = datetime.datetime.now().isoformat()
+                                threading.Thread(target=log_trade_to_db, args=(trade_log,)).start()
+
                                 save_state(BOT_STATE)
                                 continue
 
@@ -503,6 +526,13 @@ def manage_positions(smartApi, token_map):
                         pos['status'] = "CLOSED"
                         pos['exit_price'] = current_ltp 
                         pos['exit_reason'] = "TIME_EXIT"
+                        
+                        # LOG TO SUPABASE
+                        trade_log = pos.copy()
+                        trade_log['pnl'] = (current_ltp - entry_price) * pos['qty']
+                        trade_log['exit_time'] = datetime.now().isoformat()
+                        threading.Thread(target=log_trade_to_db, args=(trade_log,)).start()
+
                         save_state(BOT_STATE)
                         continue
 

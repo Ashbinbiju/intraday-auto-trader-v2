@@ -10,3 +10,4 @@ websockets
 python-multipart
 
 aiohttp
+supabase

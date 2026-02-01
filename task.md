@@ -40,6 +40,9 @@
     - [x] **State Manager**: Implemented `state_manager.py` for JSON-based backsups. <!-- id: 51 -->
     - [x] **Main Loop**: Integrated `load_state` on start and `save_state` on Entry/Exit. <!-- id: 52 -->
     - [x] **API Persistence**: Integrated `save_state` on all configuration and manual override endpoints. <!-- id: 53 -->
+    - [x] **Database Integration**: Connected **Supabase** (PostgreSQL) for cloud persistence. <!-- id: 54 -->
+        - [x] Created `database.py` for remote Config/State/Logs.
+        - [x] Integrated `log_trade_to_db` into `main.py` for permanent trade history.
 
 - [x] **Startup Reconciliation** <!-- id: 60 -->
     - [x] **Backend Logic**: Implemented `reconcile_state()` to sync Broker -> Bot. <!-- id: 61 -->
