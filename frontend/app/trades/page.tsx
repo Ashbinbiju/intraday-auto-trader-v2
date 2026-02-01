@@ -115,6 +115,12 @@ function Card({ symbol, pos, handleManualExit, processing }: any) {
     const entry = pos.entry_price || 0;
     const sl = pos.sl || 0;
     const tp = pos.target || 0;
+    const currentLtp = pos.current_ltp || entry;
+
+    // Calculate unrealized P&L
+    const unrealizedPnl = (currentLtp - entry) * (pos.qty || 0);
+    const pnlPct = entry > 0 ? ((currentLtp - entry) / entry) * 100 : 0;
+    const isProfitable = unrealizedPnl >= 0;
 
     return (
         <div className="bg-white/5 border border-white/10 rounded-xl p-6 relative overflow-hidden group hover:border-blue-500/30 transition-all">
@@ -140,9 +146,20 @@ function Card({ symbol, pos, handleManualExit, processing }: any) {
                         <TimeCounter startTime={pos.entry_time} />
                     </div>
                 </div>
-                <div className="text-right mt-4">
-                    <div className="text-xl font-mono font-bold text-blue-400">₹{entry}</div>
-                    <div className="text-xs text-gray-500">Entry Price</div>
+                <div className="text-right mt-4 space-y-1">
+                    {/* Current LTP */}
+                    <div className={`text-2xl font-mono font-bold ${isProfitable ? 'text-green-400' : 'text-red-400'}`}>
+                        ₹{currentLtp.toFixed(2)}
+                    </div>
+                    <div className="text-xs text-gray-500">Current Price</div>
+
+                    {/* Unrealized P&L */}
+                    <div className={`text-sm font-mono font-semibold ${isProfitable ? 'text-green-400' : 'text-red-400'}`}>
+                        {isProfitable ? '+' : ''}₹{unrealizedPnl.toFixed(2)} ({isProfitable ? '+' : ''}{pnlPct.toFixed(2)}%)
+                    </div>
+
+                    {/* Entry Price (smaller, below) */}
+                    <div className="text-xs text-gray-500 mt-2">Entry: ₹{entry.toFixed(2)}</div>
                 </div>
             </div>
 

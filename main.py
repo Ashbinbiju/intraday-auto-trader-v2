@@ -314,6 +314,7 @@ def manage_positions(smartApi, token_map):
                 # target_price = pos['target'] # DISABLED Fixed Target
                 
                 # UPDATE HIGHEST LTP (For Trailing/Breakeven)
+                pos['current_ltp'] = current_ltp  # Store current price for frontend display
                 if current_ltp > pos.get('highest_ltp', 0):
                     pos['highest_ltp'] = current_ltp
 
