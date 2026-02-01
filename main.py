@@ -356,7 +356,7 @@ def manage_positions(smartApi, token_map):
                 # 2. TRAILING TECHNICAL EXIT (Strict Candle Close)
                 # Rule: Exit if Closed Price < EMA20 AND Closed Price < VWAP (Dual Confirmation)
                 try:
-                    df_tech = fetch_candle_data(smartApi, token, symbol, "FIFTEEN_MINUTE")
+                    df_tech = fetch_candle_data(smartApi, token, symbol, "FIVE_MINUTE")
                     if df_tech is not None:
                         df_tech = calculate_indicators(df_tech)
                         
@@ -681,8 +681,8 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                 use_structure = config_manager.get("structure_risk", "use_structure_based") or False
                                 
                                 if use_structure:
-                                    # Fetch 15-minute candles for structure analysis
-                                    df_risk = fetch_candle_data(smartApi, token, symbol, "FIFTEEN_MINUTE")
+                                    # Fetch 5-minute candles for structure analysis (matches scanner)
+                                    df_risk = fetch_candle_data(smartApi, token, symbol, "FIVE_MINUTE")
                                     
                                     if df_risk is None or df_risk.empty:
                                         logger.warning(f"❌ Skipping {symbol}: Unable to fetch candle data for risk calculation")

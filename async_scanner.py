@@ -61,7 +61,7 @@ class AsyncScanner:
                 self.smartApi, 
                 token, 
                 symbol, 
-                "FIFTEEN_MINUTE", 
+                "FIVE_MINUTE",  # Changed from FIFTEEN_MINUTE for faster signals
                 5, 3, 1 # Default params
             )
             
