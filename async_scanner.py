@@ -227,10 +227,18 @@ class AsyncScanner:
                                 'time': get_ist_now().strftime("%Y-%m-%d %H:%M:%S")
                             })
                         else:
-                            # Log specific rejection reasons for debugging (like Extension Limit)
-                            if "Extension" in message or "Late Entry" in message:
-                                regime = "TREND" if extension_limit == 3.0 else "SAFETY"
-                                logger.info(f"[ENTRY_GUARD] {symbol} skipped: {message} (REGIME={regime})")
+                            # Log ALL rejections for debugging (since we have 0 signals)
+                            # To avoid log spam in production, we can condense this later.
+                            last_row = df.iloc[-1]
+                            close_p = last_row['close']
+                            ema_20 = last_row['EMA_20']
+                            rsi_val = last_row['RSI']
+                            
+                            # Only log "Interesting" rejections (Close > EMA20) to filter noise
+                            if close_p > ema_20:
+                                ext_pct = ((close_p - ema_20) / ema_20) * 100
+                                logger.info(f"[DEBUG_REJECT] {symbol}: Msg='{message}' | Close={close_p:.2f} EMA={ema_20:.2f} RSI={rsi_val:.1f} Ext={ext_pct:.2f}%")
+
                             
                     except Exception as e:
                         logger.error(f"Processing Error {symbol}: {e}")
