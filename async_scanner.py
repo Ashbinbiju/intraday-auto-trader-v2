@@ -225,31 +225,27 @@ class AsyncScanner:
                     continue
 
                 if raw_data is not None:
-                    # Check if it's already a DataFrame (from smart_api_helper delegator)
-                    if isinstance(raw_data, pd.DataFrame):
-                        df = raw_data
-                        logger.info(f"[DEBUG_DATA] {symbol}: ✅ Fetched {len(df)} candles")
-                    
-                    # Legacy fallback (list of lists) - kept just in case
-                    elif isinstance(raw_data, list):
-                        logger.info(f"[DEBUG_DATA] {symbol}: ✅ Fetched {len(raw_data)} candles (List)")
-                        try:
+                    try:
+                        # Check if it's already a DataFrame (from smart_api_helper delegator)
+                        if isinstance(raw_data, pd.DataFrame):
+                            df = raw_data
+                            logger.info(f"[DEBUG_DATA] {symbol}: ✅ Fetched {len(df)} candles")
+                        
+                        # Legacy fallback (list of lists) - kept just in case
+                        elif isinstance(raw_data, list):
+                            logger.info(f"[DEBUG_DATA] {symbol}: ✅ Fetched {len(raw_data)} candles (List)")
                             df = pd.DataFrame(raw_data, columns=['datetime', 'open', 'high', 'low', 'close', 'volume'])
                             df['datetime'] = pd.to_datetime(df['datetime'])
                             # Conversion
                             df['close'] = df['close'].astype(float)
                             df['volume'] = df['volume'].astype(int)
                             df['open'] = df['open'].astype(float)
-                        except Exception as e:
-                            logger.error(f"DataFrame Conversion Failed for {symbol}: {e}")
+                        else:
+                            logger.warning(f"[DEBUG_DATA] {symbol}: ❌ Unknown Data Format: {type(raw_data)}")
                             continue
-                    else:
-                        logger.warning(f"[DEBUG_DATA] {symbol}: ❌ Unknown Data Format: {type(raw_data)}")
-                        continue
-                        
-                    # Indicators
-                    df = calculate_indicators(df)
-
+                            
+                        # Indicators
+                        df = calculate_indicators(df)
                         
                         # Check Buy Condition (Strict Closed Candle)
                         screener_ltp = 0.0 # Placeholder, indicator ignores it now
@@ -272,7 +268,6 @@ class AsyncScanner:
                             })
                         else:
                             # Log ALL rejections for debugging (since we have 0 signals)
-                            # To avoid log spam in production, we can condense this later.
                             last_row = df.iloc[-1]
                             close_p = last_row['close']
                             ema_20 = last_row['EMA_20']
@@ -283,11 +278,10 @@ class AsyncScanner:
                                 ext_pct = ((close_p - ema_20) / ema_20) * 100
                                 logger.info(f"[DEBUG_REJECT] {symbol}: Msg='{message}' | Close={close_p:.2f} EMA={ema_20:.2f} RSI={rsi_val:.1f} Ext={ext_pct:.2f}%")
 
-                            
                     except Exception as e:
                         logger.error(f"Processing Error {symbol}: {e}")
                         continue
-
+        
         duration = (datetime.now() - start_time).total_seconds()
         logger.info(f"Async Scan Completed in {duration:.2f}s. Found {len(signals)} signals.")
         return signals
