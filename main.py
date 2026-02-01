@@ -566,6 +566,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                         
                                         with state_lock:
                                             sl_price = entry_price * (1 - config_manager.get("risk", "stop_loss_pct"))
+                                            target_price = entry_price * (1 + config_manager.get("risk", "target_pct"))
                                             BOT_STATE["positions"][symbol] = {
                                                 "symbol": symbol,
                                                 "entry_price": entry_price,
@@ -574,6 +575,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                                 "entry_time": get_ist_now().strftime("%H:%M"),
                                                 "entry_time_ts": get_ist_now().timestamp(), # Added for Time Exit
                                                 "sl": sl_price,
+                                                "target": target_price,  # FIXED: Was missing!
                                                 "original_sl": sl_price, # Added for Breakeven Calculation (R)
                                                 "highest_ltp": entry_price,
                                                 "is_breakeven_active": False,
