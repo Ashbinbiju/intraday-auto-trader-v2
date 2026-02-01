@@ -183,13 +183,30 @@ class AsyncScanner:
             logger.info(f"⚡ SENTINEL DEBUG ACTIVE ⚡ - Market Check Done. Ext Limit: {extension_limit}")
 
             tasks = []
-            for stock in stocks_list:
+            
+            # Rate Limiting: Process in batches or with delay
+            # Angel One Rate Limit is approx 3 requests per second for Historical Data.
+            # We have 176 stocks. Firing all at once gets us banned (AB2001).
+            # Strategy: Fire 3 requests, wait 1 second.
+            
+            rate_limit_batch_size = 3
+            rate_limit_delay = 1.0 # 1 Second constraint
+            
+            total_stocks = len(stocks_list)
+            
+            for i, stock in enumerate(stocks_list):
                 symbol = stock['symbol']
                 token = token_map.get(symbol)
+                
                 if token:
-                    tasks.append(self.bounded_fetch(session, symbol, token))
+                    # Fire Request
+                    tasks.append(asyncio.create_task(self.bounded_fetch(session, symbol, token)))
+                    
+                    # Throttling Logic
+                    if (i + 1) % rate_limit_batch_size == 0:
+                        await asyncio.sleep(rate_limit_delay)
             
-            # Process as they complete
+            # Process as they complete (Tasks are already running from loop above)
             for task in asyncio.as_completed(tasks):
                 symbol, raw_data = await task
                 
