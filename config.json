@@ -19,7 +19,7 @@
     },
     "general": {
         "quantity": 1,
-        "check_interval": 60,
+        "check_interval": 10,
         "dry_run": true
     }
 }
