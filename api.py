@@ -48,10 +48,18 @@ class GeneralConfig(BaseModel):
     check_interval: int
     dry_run: bool
 
+class PositionSizingConfig(BaseModel):
+    mode: str
+    risk_per_trade_pct: float
+    max_position_size_pct: float
+    min_sl_distance_pct: float
+    paper_trading_balance: float
+
 class FullConfig(BaseModel):
     risk: RiskConfig
     limits: LimitsConfig
     general: GeneralConfig
+    position_sizing: PositionSizingConfig
 
 # ----------------------------------
 
@@ -111,6 +119,13 @@ async def update_settings(config: FullConfig):
         config_manager.set(["general", "quantity"], config.general.quantity)
         config_manager.set(["general", "check_interval"], config.general.check_interval)
         config_manager.set(["general", "dry_run"], config.general.dry_run)
+
+        # Update Position Sizing
+        config_manager.set(["position_sizing", "mode"], config.position_sizing.mode)
+        config_manager.set(["position_sizing", "risk_per_trade_pct"], config.position_sizing.risk_per_trade_pct)
+        config_manager.set(["position_sizing", "max_position_size_pct"], config.position_sizing.max_position_size_pct)
+        config_manager.set(["position_sizing", "min_sl_distance_pct"], config.position_sizing.min_sl_distance_pct)
+        config_manager.set(["position_sizing", "paper_trading_balance"], config.position_sizing.paper_trading_balance)
 
         # FORCE STATE UPDATE
         with state_lock:
