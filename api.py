@@ -173,9 +173,21 @@ async def close_trade(symbol: str):
     order_id = place_sell_order(main.SMART_API_SESSION, symbol, token, qty, reason="MANUAL_API_EXIT")
     
     if order_id or config_manager.get("general", "dry_run"):
+        # Fetch current LTP as exit price
+        try:
+            from smart_api_helper import fetch_ltp
+            exit_price = fetch_ltp(main.SMART_API_SESSION, token, symbol)
+            if exit_price is None or exit_price == 0:
+                # Fallback: Use entry price if LTP fetch fails
+                exit_price = BOT_STATE["positions"][symbol].get("entry_price", 0)
+        except Exception:
+            # Fallback on error
+            exit_price = BOT_STATE["positions"][symbol].get("entry_price", 0)
+        
         # Update State
         with state_lock:
             BOT_STATE["positions"][symbol]["status"] = "CLOSED"
+            BOT_STATE["positions"][symbol]["exit_price"] = exit_price
             BOT_STATE["positions"][symbol]["exit_reason"] = "MANUAL"
             await manager.broadcast(BOT_STATE)
             save_state(BOT_STATE)

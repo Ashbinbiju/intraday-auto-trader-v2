@@ -133,6 +133,24 @@ def fetch_candle_data(smartApi, token, symbol, interval="FIFTEEN_MINUTE", days=5
     return None
 
 
+def fetch_ltp(smartApi, token, symbol):
+    """
+    Fetches the Last Traded Price (LTP) for a given symbol.
+    Returns the LTP as a float, or None if fetch fails.
+    """
+    try:
+        data = smartApi.ltpData("NSE", f"{symbol}-EQ", token)
+        
+        if data and 'data' in data and 'ltp' in data['data']:
+            return float(data['data']['ltp'])
+        else:
+            logger.warning(f"Could not fetch LTP for {symbol}")
+            return None
+    except Exception as e:
+        logger.error(f"Error fetching LTP for {symbol}: {e}")
+        return None
+
+
 def load_instrument_map():
     url = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
     try:
