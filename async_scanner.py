@@ -271,12 +271,12 @@ class AsyncScanner:
                             last_row = df.iloc[-1]
                             close_p = last_row['close']
                             ema_20 = last_row['EMA_20']
-                            rsi_val = last_row['RSI']
+                            # rsi_val = last_row.get('RSI', 0) # Removed as RSI is not calculated
                             
                             # Only log "Interesting" rejections (Close > EMA20) to filter noise
                             if close_p > ema_20:
                                 ext_pct = ((close_p - ema_20) / ema_20) * 100
-                                logger.info(f"[DEBUG_REJECT] {symbol}: Msg='{message}' | Close={close_p:.2f} EMA={ema_20:.2f} RSI={rsi_val:.1f} Ext={ext_pct:.2f}%")
+                                logger.info(f"[DEBUG_REJECT] {symbol}: Msg='{message}' | Close={close_p:.2f} EMA={ema_20:.2f} Ext={ext_pct:.2f}%")
 
                     except Exception as e:
                         logger.error(f"Processing Error {symbol}: {e}")
