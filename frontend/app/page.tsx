@@ -31,7 +31,8 @@ export default function Dashboard() {
         let total = 0;
 
         Object.values(positions).forEach((pos: any) => {
-            if (pos.status === 'CLOSED') {
+            // Exclude Ghost Trades (never actually executed)
+            if (pos.status === 'CLOSED' && pos.exit_reason !== 'RECONCILIATION_MISSING') {
                 total++;
                 const pnl = (pos.exit_price - pos.entry_price) * pos.qty;
                 totalPnl += pnl;
