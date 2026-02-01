@@ -5,7 +5,7 @@ import pandas as pd
 from datetime import datetime
 from indicators import calculate_indicators, check_buy_condition
 from utils import get_ist_now
-from smart_api_helper import API_KEY, CLIENT_CODE
+from smart_api_helper import API_KEY, CLIENT_CODE, fetch_candle_data
 
 logger = logging.getLogger("AsyncScanner")
 # Ensure logging output matches MainBot
