@@ -112,9 +112,9 @@ export default function TradesPage() {
 
 // Sub-components to keep code clean and fix the TimeCounter scope issue
 function Card({ symbol, pos, handleManualExit, processing }: any) {
-    const entry = pos.entry_price;
-    const sl = pos.sl;
-    const tp = pos.target;
+    const entry = pos.entry_price || 0;
+    const sl = pos.sl || 0;
+    const tp = pos.target || 0;
 
     return (
         <div className="bg-white/5 border border-white/10 rounded-xl p-6 relative overflow-hidden group hover:border-blue-500/30 transition-all">
