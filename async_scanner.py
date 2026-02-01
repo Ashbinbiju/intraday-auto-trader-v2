@@ -54,20 +54,34 @@ class AsyncScanner:
         
         try:
             # Call the Verified Helper Function (Blocking)
-            # Signature: fetch_candle_data(smartApi, token, symbol, interval, days, retries, delay)
-            df = await loop.run_in_executor(
+            # Fetch BOTH 15M (bias) and 5M (entry) for multi-timeframe confluence
+            loop = asyncio.get_event_loop()
+            
+            # Fetch 15M for trend bias/direction
+            df_15m = await loop.run_in_executor(
                 None, 
                 fetch_candle_data, 
                 self.smartApi, 
                 token, 
                 symbol, 
-                "FIVE_MINUTE",  # Changed from FIFTEEN_MINUTE for faster signals
-                5, 3, 1 # Default params
+                "FIFTEEN_MINUTE",
+                5, 3, 1
             )
             
-            if df is not None and not df.empty:
-                # Success! Return DF directly.
-                return symbol, df
+            # Fetch 5M for precise entry signal
+            df_5m = await loop.run_in_executor(
+                None, 
+                fetch_candle_data, 
+                self.smartApi, 
+                token, 
+                symbol, 
+                "FIVE_MINUTE",
+                5, 3, 1
+            )
+            
+            if df_15m is not None and df_5m is not None:
+                # Return both as tuple
+                return symbol, (df_15m, df_5m)
             
             return symbol, None
 
@@ -226,38 +240,35 @@ class AsyncScanner:
 
                 if raw_data is not None:
                     try:
-                        # Check if it's already a DataFrame (from smart_api_helper delegator)
-                        if isinstance(raw_data, pd.DataFrame):
-                            df = raw_data
-                            logger.info(f"[DEBUG_DATA] {symbol}: ✅ Fetched {len(df)} candles")
-                        
-                        # Legacy fallback (list of lists) - kept just in case
-                        elif isinstance(raw_data, list):
-                            logger.info(f"[DEBUG_DATA] {symbol}: ✅ Fetched {len(raw_data)} candles (List)")
-                            df = pd.DataFrame(raw_data, columns=['datetime', 'open', 'high', 'low', 'close', 'volume'])
-                            df['datetime'] = pd.to_datetime(df['datetime'])
-                            # Conversion
-                            df['close'] = df['close'].astype(float)
-                            df['volume'] = df['volume'].astype(int)
-                            df['open'] = df['open'].astype(float)
-                        else:
-                            logger.warning(f"[DEBUG_DATA] {symbol}: ❌ Unknown Data Format: {type(raw_data)}")
-                            continue
+                        # raw_data is now a tuple: (df_15m, df_5m)
+                        if isinstance(raw_data, tuple) and len(raw_data) == 2:
+                            df_15m, df_5m = raw_data
+                            logger.info(f"[DEBUG_DATA] {symbol}: ✅ Fetched 15M ({len(df_15m)}) + 5M ({len(df_5m)}) candles")
                             
-                        # Indicators
-                        df = calculate_indicators(df)
-                        
-                        # Check Buy Condition (Strict Closed Candle)
-                        screener_ltp = 0.0 # Placeholder, indicator ignores it now
-                        buy_signal, message = check_buy_condition(df, current_price=screener_ltp, extension_limit=extension_limit)
-                        
-                        if buy_signal:
-                            logger.info(f"🚀 Signal Found: {symbol} - {message}")
+                            # Import check_15m_bias
+                            from indicators import check_15m_bias
                             
-                            # Retrieve sector if available in passed list (Optimization: Lookup map)
-                            stock_info = next((s for s in stocks_list if s['symbol'] == symbol), None)
-                            sector_name = stock_info.get('sector', 'Unknown') if stock_info else "Unknown"
-                            actual_ltp = stock_info['ltp'] if stock_info else 0.0
+                            # Step 1: Check 15M Bias (The Golden Rule)
+                            df_15m = calculate_indicators(df_15m)
+                            bias_15m, bias_reason = check_15m_bias(df_15m)
+                            
+                            # REJECT if 15M is not BULLISH
+                            if bias_15m != 'BULLISH':
+                                logger.info(f"❌ {symbol} REJECTED: {bias_reason}")
+                                continue
+                            
+                            # Step 2: Check 5M Entry Signal
+                            df_5m = calculate_indicators(df_5m)
+                            screener_ltp = 0.0
+                            buy_signal, message = check_buy_condition(df_5m, current_price=screener_ltp, extension_limit=extension_limit)
+                            
+                            if buy_signal:
+                                logger.info(f"✅ {symbol} PASSED: {bias_reason} | 5M: {message}")
+                                
+                                # Retrieve sector
+                                stock_info = next((s for s in stocks_list if s['symbol'] == symbol), None)
+                                sector_name = stock_info.get('sector', 'Unknown') if stock_info else "Unknown"
+                                actual_ltp = stock_info['ltp'] if stock_info else 0.0
 
                             signals.append({
                                 'symbol': symbol,
