@@ -50,7 +50,7 @@ export default function Dashboard() {
 
     useEffect(() => {
         fetchData();
-        const interval = setInterval(fetchData, 3000);
+        const interval = setInterval(fetchData, 1000); // Update every 1 second (was 3s)
         return () => clearInterval(interval);
     }, []);
 
