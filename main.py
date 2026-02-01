@@ -130,6 +130,116 @@ def place_sell_order(smartApi, symbol, token, qty, reason="EXIT"):
         logger.error(f"SELL Order Failed for {symbol}: {e}")
         return None
 
+def calculate_structure_based_sl(df, entry_price, vwap, ema20):
+    """
+    Calculate Stop-Loss based on nearest market structure.
+    Uses priority weighting: Swing Low > VWAP > EMA20.
+    
+    Returns: (sl_price, sl_reason, sl_distance_pct) or (None, reason, 0)
+    """
+    buffer_pct = config_manager.get("structure_risk", "sl_buffer_pct") or 0.002  # 0.2%
+    min_sl_distance = config_manager.get("structure_risk", "min_sl_distance_pct") or 0.8
+    max_sl_distance = config_manager.get("structure_risk", "max_sl_distance_pct") or 2.0
+    
+    # Priority weighting (higher = stronger structure)
+    priority = {
+        "Swing Low": 3,  # Strongest - actual market structure
+        "VWAP": 2,       # Dynamic support
+        "EMA20": 1       # Trend indicator
+    }
+    
+    # Option 1: Swing Low (last 10 candles)
+    recent_candles = df.iloc[-10:]
+    swing_low = recent_candles['low'].min()
+    swing_low_sl = swing_low * (1 - buffer_pct)
+    
+    # Option 2: VWAP-based
+    vwap_sl = vwap * (1 - buffer_pct)
+    
+    # Option 3: EMA20-based
+    ema20_sl = ema20 * (1 - buffer_pct)
+    
+    candidates = [
+        (swing_low_sl, "Swing Low"),
+        (vwap_sl, "VWAP"),
+        (ema20_sl, "EMA20")
+    ]
+    
+    # Filter: Only use SL below entry
+    valid_candidates = [(sl, reason) for sl, reason in candidates if sl < entry_price]
+    
+    if not valid_candidates:
+        return None, "No valid structure found", 0
+    
+    # Choose by priority FIRST, then by price (closest)
+    best_sl, reason = max(valid_candidates, key=lambda x: (priority[x[1]], x[0]))
+    
+    # Calculate distance
+    sl_distance_pct = ((entry_price - best_sl) / entry_price) * 100
+    
+    # Safety Check: Reject if SL < 0.8% (wick risk)
+    if sl_distance_pct < min_sl_distance:
+        return None, f"SL too tight ({sl_distance_pct:.2f}%) - wick risk", sl_distance_pct
+    
+    # Safety Check: Reject if SL > 2% away
+    if sl_distance_pct > max_sl_distance:
+        return None, f"SL too wide ({sl_distance_pct:.2f}%)", sl_distance_pct
+    
+    return best_sl, f"{reason} ({sl_distance_pct:.2f}%)", sl_distance_pct
+
+
+def calculate_structure_based_tp(entry_price, sl_price, df, previous_day_high=None):
+    """
+    Calculate Take-Profit based on market structure.
+    Priority: PDH > Swing High > 1.5R minimum.
+    
+    Returns: (tp_price, tp_reason, risk_reward_ratio) or (None, reason, 0)
+    """
+    min_rr = config_manager.get("structure_risk", "min_risk_reward") or 1.5
+    
+    risk = entry_price - sl_price
+    min_reward = risk * min_rr  # Minimum 1.5R
+    min_tp = entry_price + min_reward
+    
+    candidates = []
+    
+    # Option 1: Previous Day High (if available and above entry)
+    if previous_day_high and previous_day_high > entry_price:
+        candidates.append((previous_day_high, "PDH"))
+    
+    # Option 2: Nearest Swing High (last 20 candles)
+    recent_candles = df.iloc[-20:]
+    swing_high = recent_candles['high'].max()
+    
+    # Distance filter: Reject swing highs too close (< 0.6%)
+    if swing_high > entry_price:
+        distance_pct = ((swing_high - entry_price) / entry_price) * 100
+        if distance_pct >= 0.6:  # Minimum 0.6% away to avoid front-running
+            candidates.append((swing_high, "Swing High"))
+    
+    # Option 3: 1.5R (Minimum acceptable)
+    candidates.append((min_tp, "1.5R Minimum"))
+    
+    # Filter: Only TPs above entry
+    valid_candidates = [(tp, reason) for tp, reason in candidates if tp > entry_price]
+    
+    if not valid_candidates:
+        return None, "No valid target found", 0
+    
+    # Choose the NEAREST one (most realistic)
+    best_tp, reason = min(valid_candidates, key=lambda x: x[0])
+    
+    # Calculate R:R
+    reward = best_tp - entry_price
+    rr_ratio = reward / risk if risk > 0 else 0
+    
+    # Reject if < 1.5R
+    if rr_ratio < min_rr:
+        return None, f"R:R too low ({rr_ratio:.2f})", rr_ratio
+    
+    return best_tp, f"{reason} (R:R {rr_ratio:.1f})", rr_ratio
+
+
 def manage_positions(smartApi, token_map):
     """
     Checks all active positions for SL, Target, and Trailing SL.
@@ -547,14 +657,72 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                         if len(BOT_STATE['signals']) > 50: BOT_STATE['signals'] = BOT_STATE['signals'][:50]
                         broadcast_state()
 
-                    # --- AUTO BUY LOGIC (Reused) ---
+                    # --- AUTO BUY LOGIC (Structure-Based Risk) ---
                     if message.startswith("Strong Buy"):
                         current_trades = len([p for p in BOT_STATE["positions"].values() if p["status"] == "OPEN"])
                         if current_trades < max_trades_day:
-                            logger.info(f"🚀 Executing BUY for {symbol} at {price}")
+                            logger.info(f"🚀 Evaluating BUY for {symbol} at {price}")
                             
                             token = token_map.get(symbol)
                             if token:
+                                # Fetch candle data for structure-based SL/TP calculation
+                                use_structure = config_manager.get("structure_risk", "use_structure_based") or False
+                                
+                                if use_structure:
+                                    # Fetch 15-minute candles for structure analysis
+                                    df_risk = fetch_candle_data(smartApi, token, symbol, "FIFTEEN_MINUTE")
+                                    
+                                    if df_risk is None or df_risk.empty:
+                                        logger.warning(f"❌ Skipping {symbol}: Unable to fetch candle data for risk calculation")
+                                        continue
+                                    
+                                    # Calculate indicators (VWAP, EMAs)
+                                    df_risk = calculate_indicators(df_risk)
+                                    
+                                    if len(df_risk) < 2:
+                                        logger.warning(f"❌ Skipping {symbol}: Insufficient candle data")
+                                        continue
+                                    
+                                    # Get latest VWAP and EMA20
+                                    latest_candle = df_risk.iloc[-1]
+                                    vwap = latest_candle.get('VWAP')
+                                    ema20 = latest_candle.get('EMA_20')
+                                    
+                                    if pd.isna(vwap) or pd.isna(ema20):
+                                        logger.warning(f"❌ Skipping {symbol}: Missing VWAP or EMA20")
+                                        continue
+                                    
+                                    # Calculate structure-based SL
+                                    sl_price, sl_reason, sl_distance = calculate_structure_based_sl(
+                                        df_risk, price, vwap, ema20
+                                    )
+                                    
+                                    if sl_price is None:
+                                        logger.warning(f"❌ Trade REJECTED: {symbol} | Reason: {sl_reason}")
+                                        continue
+                                    
+                                    # Get PDH from bot state (if available)
+                                    pdh = BOT_STATE.get("previous_day_high", {}).get(symbol)
+                                    
+                                    # Calculate structure-based TP
+                                    target_price, tp_reason, rr_ratio = calculate_structure_based_tp(
+                                        price, sl_price, df_risk, pdh
+                                    )
+                                    
+                                    if target_price is None:
+                                        logger.warning(f"❌ Trade REJECTED: {symbol} | Reason: {tp_reason}")
+                                        continue
+                                    
+                                    logger.info(f"✅ Structure Risk Validated: {symbol}")
+                                    logger.info(f"   SL: ₹{sl_price:.2f} | {sl_reason}")
+                                    logger.info(f"   TP: ₹{target_price:.2f} | {tp_reason}")
+                                else:
+                                    # Fallback to percentage-based (old system)
+                                    sl_price = price * (1 - config_manager.get("risk", "stop_loss_pct"))
+                                    target_price = price * (1 + config_manager.get("risk", "target_pct"))
+                                    logger.info(f"Using percentage-based risk (fallback mode)")
+                                
+                                # Place the order
                                 orderId = place_buy_order(smartApi, symbol, token, quantity)
                                 
                                 # Verify Order Status
@@ -565,18 +733,16 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                         entry_price = avg_price if avg_price > 0 else price
                                         
                                         with state_lock:
-                                            sl_price = entry_price * (1 - config_manager.get("risk", "stop_loss_pct"))
-                                            target_price = entry_price * (1 + config_manager.get("risk", "target_pct"))
                                             BOT_STATE["positions"][symbol] = {
                                                 "symbol": symbol,
                                                 "entry_price": entry_price,
                                                 "qty": quantity,
                                                 "status": "OPEN",
                                                 "entry_time": get_ist_now().strftime("%H:%M"),
-                                                "entry_time_ts": get_ist_now().timestamp(), # Added for Time Exit
+                                                "entry_time_ts": get_ist_now().timestamp(),
                                                 "sl": sl_price,
-                                                "target": target_price,  # FIXED: Was missing!
-                                                "original_sl": sl_price, # Added for Breakeven Calculation (R)
+                                                "target": target_price,
+                                                "original_sl": sl_price,
                                                 "highest_ltp": entry_price,
                                                 "is_breakeven_active": False,
                                                 "order_id": orderId

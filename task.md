@@ -83,10 +83,19 @@
     - [x] Create Strategy Note (`strategy_summary.md`)
     - [x] Create API Risk Analysis (`api_risk_analysis.md`)
 
-- [ ] **Debugging & Verification** <!-- id: 72 -->
-    - [x] Investigate "Zero Signals" (Confirmed Rate Limit)
+- [/] **Debugging & Verification** <!-- id: 72 -->
+    - [x] Investigate "Zero Signals" (Confirmed Rate Limit & Syntax Error)
     - [x] Enable Global Debug Logging (`async_scanner.py`)
     - [x] Implement Rate Limiting (3 req/s)
+    - [x] Fix Syntax Error in Helper
+    - [x] Fix Data Fetching Issues (Verified via Script)
+    - [x] Standardize API Logic (The Definitive Fix for "Invalid Token")
+    - [x] Fix RSI KeyError in async_scanner.py
+    - [x] Fix Ghost Trade P&L Bug (Exclude RECONCILIATION_MISSING from metrics)
+    - [x] Fix Missing Target Field Bug (Positions were created without take-profit)
+    - [x] Fix Pandas Import (Position management was crashing)
+    - [x] Fix Paper Trade Reconciliation (Skip broker API calls in dry_run mode)
+    - [x] Fix Trades Page Crashes (CheckCircle import + toFixed() safety checks)
     - [ ] Analyze Rejection Logs
 
 

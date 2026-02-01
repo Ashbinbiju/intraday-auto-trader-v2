@@ -4,6 +4,13 @@
         "target_pct": 0.02,
         "trail_be_trigger": 0.012
     },
+    "structure_risk": {
+        "use_structure_based": true,
+        "min_sl_distance_pct": 0.8,
+        "max_sl_distance_pct": 2.0,
+        "sl_buffer_pct": 0.002,
+        "min_risk_reward": 1.5
+    },
     "limits": {
         "max_trades_per_day": 1,
         "max_trades_per_stock": 3,
