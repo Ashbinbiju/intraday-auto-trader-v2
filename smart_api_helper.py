@@ -96,6 +96,7 @@ def fetch_candle_data(smartApi, token, symbol, interval="FIFTEEN_MINUTE", days=5
             
             if is_status_success(data):
                 if not data.get('data'):
+                    logger.warning(f"⚠️ API Returned Success but Empty Data for {symbol}: {data}")
                     return None
                 
                 df = pd.DataFrame(data['data'], columns=['datetime', 'open', 'high', 'low', 'close', 'volume'])
@@ -111,6 +112,8 @@ def fetch_candle_data(smartApi, token, symbol, interval="FIFTEEN_MINUTE", days=5
             
             # Identify Rate Limit Errors
             msg = str(data.get('message', '')).lower()
+            logger.error(f"❌ API Error for {symbol}: {msg} | Code: {data.get('errorcode')} | Full: {data}")
+            
             if "access rate" in msg or "access denied" in msg or (data.get('errorcode') == 'AB2001'):
                 logger.warning(f"⚠️ SmartAPI Rate Limit hit (Candles). Retrying in {delay}s... ({i+1}/{retries})")
                 time.sleep(delay)
