@@ -276,12 +276,23 @@ def manage_positions(smartApi, token_map):
             # Was 15:15, now strict 14:45 Exit
             if current_time >= "14:45":
                 logger.info(f"⏰ Time Limit Reached (14:45). Booking Profit/Loss for {symbol}...")
+                
+                # Fetch current LTP before closing
+                time.sleep(0.2)  # Throttle
+                ltp_data = smartApi.ltpData("NSE", f"{symbol}-EQ", token)
+                exit_price = 0
+                
+                if ltp_data and 'data' in ltp_data:
+                    exit_price = ltp_data['data']['ltp']
+                else:
+                    logger.warning(f"Could not fetch LTP for TIME_EXIT. Using 0.")
+                
                 with state_lock:
                     pos = BOT_STATE["positions"].get(symbol)
                     if pos and pos["status"] == "OPEN":
                         place_sell_order(smartApi, symbol, token, pos['qty'], reason="TIME_EXIT")
                         pos['status'] = "CLOSED"
-                        pos['exit_price'] = 0 # Market Exit
+                        pos['exit_price'] = exit_price  # Actual market price
                         pos['exit_reason'] = "TIME_EXIT"
                         save_state(BOT_STATE)
                 continue
