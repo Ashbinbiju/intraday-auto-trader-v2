@@ -16,7 +16,12 @@ export default function JournalPage() {
             const allPositions = wsData.positions;
             const closedTrades = Object.entries(allPositions)
                 .map(([symbol, data]: any) => ({ symbol, ...data }))
-                .filter((p: any) => p.status === "CLOSED");
+                .filter((p: any) =>
+                    p.status === "CLOSED" &&
+                    p.exit_reason !== 'RECONCILIATION_MISSING' && // Exclude ghost trades
+                    p.exit_price &&
+                    p.exit_price > 0 // Exclude invalid exit prices
+                );
             setTrades(closedTrades.reverse());
             setLoading(false);
         }

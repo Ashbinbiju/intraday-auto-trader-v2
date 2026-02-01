@@ -32,7 +32,11 @@ export default function Dashboard() {
 
         Object.values(positions).forEach((pos: any) => {
             // Exclude Ghost Trades (never actually executed)
-            if (pos.status === 'CLOSED' && pos.exit_reason !== 'RECONCILIATION_MISSING') {
+            // Exclude Invalid Data (exit_price = 0 or undefined - old bug)
+            if (pos.status === 'CLOSED' &&
+                pos.exit_reason !== 'RECONCILIATION_MISSING' &&
+                pos.exit_price &&
+                pos.exit_price > 0) {
                 total++;
                 const pnl = (pos.exit_price - pos.entry_price) * pos.qty;
                 totalPnl += pnl;
