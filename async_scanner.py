@@ -180,7 +180,8 @@ class AsyncScanner:
             
             # Step 1: Check Market Sentiment (Dynamic Limit)
             extension_limit = await self.check_market_sentiment(session, index_memory)
-            
+            logger.info(f"⚡ SENTINEL DEBUG ACTIVE ⚡ - Market Check Done. Ext Limit: {extension_limit}")
+
             tasks = []
             for stock in stocks_list:
                 symbol = stock['symbol']
@@ -192,7 +193,12 @@ class AsyncScanner:
             for task in asyncio.as_completed(tasks):
                 symbol, raw_data = await task
                 
+                if not raw_data:
+                    logger.warning(f"[DEBUG_DATA] {symbol}: ❌ No Data (Raw Empty)")
+                    continue
+
                 if raw_data:
+                    logger.info(f"[DEBUG_DATA] {symbol}: ✅ Fetched {len(raw_data)} candles")
                     try:
                         # Create DF
                         df = pd.DataFrame(raw_data, columns=['datetime', 'open', 'high', 'low', 'close', 'volume'])
