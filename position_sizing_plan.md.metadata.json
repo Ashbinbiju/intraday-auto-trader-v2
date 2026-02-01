@@ -1,0 +1,5 @@
+{
+  "artifactType": "ARTIFACT_TYPE_IMPLEMENTATION_PLAN",
+  "summary": "Detailed plan for implementing automatic position sizing that calculates quantity based on account balance, risk percentage, and stop-loss distance. Includes formula, code examples, safety checks, and testing scenarios. Ensures consistent 1% risk per trade regardless of stock price or SL width.",
+  "updatedAt": "2026-02-01T10:17:29.310806200Z"
+}

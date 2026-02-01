@@ -1,0 +1,5 @@
+{
+  "artifactType": "ARTIFACT_TYPE_OTHER",
+  "summary": "Analysis of SmartAPI dependencies, potential failure points (missing values), impact on the trading strategy, and existing/proposed mitigations.",
+  "updatedAt": "2026-01-30T03:15:04.922123800Z"
+}

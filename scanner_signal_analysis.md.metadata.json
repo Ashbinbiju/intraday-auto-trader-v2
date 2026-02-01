@@ -1,0 +1,5 @@
+{
+  "artifactType": "ARTIFACT_TYPE_OTHER",
+  "summary": "Diagnostic report analyzing why the scanner generated signals for WHIRLPOOL and LATENTVIEW despite apparent downtrends. Explains timeframe mismatch between 15M scanner candles and 5M user charts, execution delays, and recommends fixes including tighter entry criteria, multi-timeframe confirmation, and faster execution.",
+  "updatedAt": "2026-02-01T09:29:31.209844100Z"
+}

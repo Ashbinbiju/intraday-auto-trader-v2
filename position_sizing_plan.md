@@ -1,0 +1,215 @@
+# Dynamic Position Sizing Implementation Plan
+
+## Current Issue
+- User must manually set `"quantity": 1` in config.json
+- Position size doesn't adjust to account balance
+- Risk per trade is not controlled relative to capital
+- Same quantity used regardless of stock price or stop-loss distance
+
+## Proposed Solution: Dynamic Position Sizing
+
+### Formula
+```
+Position Size (qty) = (Account Balance × Risk %) / (Entry Price × SL Distance %)
+```
+
+**Example:**
+- Account Balance: ₹100,000
+- Risk per trade: 1% = ₹1,000
+- Entry Price: ₹500
+- SL Distance: 2% (₹10)
+
+```
+Qty = 1000 / 10 = 100 shares
+Total Investment = 100 × 500 = ₹50,000 (50% of capital)
+Risk = 100 × 10 = ₹1,000 (1% of capital) ✅
+```
+
+### Configuration Changes
+
+#### config.json
+```json
+{
+  "position_sizing": {
+    "mode": "dynamic",  // "fixed" or "dynamic"
+    "risk_per_trade_pct": 1.0,  // 1% of account balance
+    "max_position_size_pct": 20.0,  // Max 20% of capital per trade
+    "paper_trading_balance": 100000  // Virtual balance for dry_run
+  },
+  "general": {
+    "quantity": 1,  // Only used if mode = "fixed"
+    "dry_run": true
+  }
+}
+```
+
+### Implementation Steps
+
+#### 1. Add Position Sizing Function
+**File:** `main.py`
+
+```python
+def calculate_position_size(entry_price, sl_price, balance, risk_pct, max_position_pct):
+    """
+    Calculates dynamic position size based on risk management.
+    
+    Args:
+        entry_price: Entry price for the stock
+        sl_price: Stop loss price
+        balance: Account balance
+        risk_pct: Risk per trade as percentage of balance (e.g., 1.0 for 1%)
+        max_position_pct: Max position size as % of balance (e.g., 20.0 for 20%)
+    
+    Returns:
+        int: Quantity to buy (rounded down)
+    """
+    # Calculate risk amount
+    risk_amount = balance * (risk_pct / 100)
+    
+    # Calculate SL distance per share
+    sl_distance = abs(entry_price - sl_price)
+    
+    # Position size = Risk Amount / SL Distance
+    qty = int(risk_amount / sl_distance)
+    
+    # Enforce max position size
+    max_qty = int((balance * max_position_pct / 100) / entry_price)
+    qty = min(qty, max_qty)
+    
+    # Ensure at least 1 share
+    qty = max(1, qty)
+    
+    return qty
+```
+
+#### 2. Get Account Balance
+**For Paper Trading:**
+```python
+def get_account_balance(smartApi, dry_run):
+    if dry_run:
+        # Use configured virtual balance
+        return config_manager.get("position_sizing", "paper_trading_balance") or 100000
+    
+    # For live trading, fetch from Angel One
+    try:
+        rmsLimit = smartApi.rmsLimit()
+        available_balance = rmsLimit['data']['availablecash']
+        return float(available_balance)
+    except Exception as e:
+        logger.error(f"Failed to fetch balance: {e}")
+        return 100000  # Fallback
+```
+
+#### 3. Integrate into Buy Logic
+**Location:** `main.py` - Signal processing section
+
+**Before:**
+```python
+qty = config_manager.get("general", "quantity") or 1
+```
+
+**After:**
+```python
+sizing_mode = config_manager.get("position_sizing", "mode") or "fixed"
+if sizing_mode == "dynamic":
+    balance = get_account_balance(smartApi, dry_run)
+    risk_pct = config_manager.get("position_sizing", "risk_per_trade_pct") or 1.0
+    max_pos_pct = config_manager.get("position_sizing", "max_position_size_pct") or 20.0
+    qty = calculate_position_size(price, sl_price, balance, risk_pct, max_pos_pct)
+else:
+    qty = config_manager.get("general", "quantity") or 1
+
+logger.info(f"📊 Position Sizing: {qty} shares @ ₹{price} | Risk: ₹{qty * abs(price - sl_price):.2f}")
+```
+
+### Safety Checks
+
+1. **Minimum Quantity:** Always at least 1 share
+2. **Maximum Position:** Can't exceed 20% of balance (configurable)
+3. **Balance Validation:** If balance fetch fails, use safe default
+4. **Dry Run Mode:** Uses `paper_trading_balance` from config
+
+### Benefits
+
+✅ **Risk Control:** Every trade risks exactly 1% of capital  
+✅ **Account-Aware:** Adapts to available balance  
+✅ **SL-Aware:** Tighter SL = larger position size  
+✅ **Paper Trading Safe:** Uses virtual balance  
+✅ **Backwards Compatible:** Can still use fixed quantity
+
+### Example Scenarios
+
+#### Scenario 1: Tight SL (Good Setup)
+- Balance: ₹100,000
+- Entry: ₹500
+- SL: ₹490 (2% SL, tight!)
+- Risk: 1% = ₹1,000
+
+```
+Qty = 1000 / 10 = 100 shares
+Investment = ₹50,000
+Risk = ₹1,000 ✅
+```
+
+#### Scenario 2: Wide SL (Risky Setup)
+- Balance: ₹100,000
+- Entry: ₹500
+- SL: ₹475 (5% SL, wide!)
+- Risk: 1% = ₹1,000
+
+```
+Qty = 1000 / 25 = 40 shares
+Investment = ₹20,000
+Risk = ₹1,000 ✅
+```
+
+**Notice:** Wider SL automatically reduces position size!
+
+#### Scenario 3: Expensive Stock
+- Balance: ₹100,000
+- Entry: ₹5000
+- SL: ₹4900 (2% SL)
+- Risk: 1% = ₹1,000
+
+```
+Qty = 1000 / 100 = 10 shares
+Investment = ₹50,000
+Risk = ₹1,000 ✅
+```
+
+### Testing Plan
+
+1. ✅ Test with dry_run = true
+2. ✅ Verify balance fetch works
+3. ✅ Test tight SL → larger qty
+4. ✅ Test wide SL → smaller qty
+5. ✅ Test max position limit
+6. ✅ Test with expensive stocks
+7. ✅ Test fallback to fixed mode
+
+### UI Changes
+
+**Settings Page:**
+- Add toggle: "Dynamic Position Sizing"
+- Add slider: "Risk Per Trade (%)" [0.5% - 2%]
+- Add slider: "Max Position Size (%)" [10% - 30%]
+- Add input: "Paper Trading Balance" (shown only in dry_run)
+- Show calculation preview
+
+### Migration
+
+**Existing users:** Keep `mode: "fixed"` by default  
+**New users:** Set `mode: "dynamic"` by default
+
+---
+
+## Ready to Implement?
+
+This design ensures:
+- ✅ Consistent risk management
+- ✅ Account balance awareness
+- ✅ Paper trading compatibility
+- ✅ Backwards compatibility
+- ✅ Safety limits
+
+**Should I proceed with implementation?**

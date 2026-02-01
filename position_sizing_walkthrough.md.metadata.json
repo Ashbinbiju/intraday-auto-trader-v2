@@ -1,0 +1,5 @@
+{
+  "artifactType": "ARTIFACT_TYPE_WALKTHROUGH",
+  "summary": "Complete walkthrough of the dynamic position sizing implementation with all production-ready safety checks. Documents the formula, safety guardrails, configuration, example calculations, testing scenarios, and log output format. Shows how the system automatically calculates quantity based on account balance and SL distance, ensuring consistent 1% risk per trade.",
+  "updatedAt": "2026-02-01T10:22:47.197117500Z"
+}

@@ -1,0 +1,66 @@
+# 🦅 Sentinel v2.0 Strategy Note
+
+## 1. Core Philosophy
+**"Trade Strong Stocks in the Direction of the Market."**
+We identify the market regime (Bullish/Choppy) first, then scan top-performing sectors for stocks showing momentum breakouts.
+
+---
+
+## 2. Market Sentinel (Phase 1)
+Before looking at any stock, we check the **Market Context** using NIFTY 50 and BANKNIFTY data (via `brkpoint.in`).
+
+**Logic: Position in Daily Range**
+$$ \text{Position} = \frac{\text{LTP} - \text{Day Low}}{\text{Day High} - \text{Day Low}} $$
+
+| Scenario | Condition | Resulting Mode | Extension Limit |
+| :--- | :--- | :--- | :--- |
+| **BULLISH** ✅ | Both Indices in Top 45% (`Pos > 0.55`) | **TREND MODE** | **3.0%** (Aggressive) |
+| **WEAK** ⚠️ | Any Index in Bottom 55% (`Pos <= 0.55`) | **SAFETY MODE** | **1.5%** (Conservative) |
+| **DATA FAIL** ❌ | Internet/API Down | **SAFETY MODE** | **1.5%** (Fail-Safe) |
+
+*   **Impact:** In Safety Mode, we reject stocks that have already moved >1.5%, assuming the move is exhausted. In Trend Mode, we chase them up to 3.0%.
+
+---
+
+## 3. Stock Selection (Phase 2)
+1.  **Sector Filter:** We scan stocks from the **Top 4 Performing Sectors** only.
+2.  **Breadth Check:** Stocks must be outperforming (Ranked by % Change).
+
+---
+
+## 4. Entry Criteria (The Checklist)
+A stock must pass **ALL** of the following checks on the **5-Minute Candle**:
+
+### A. Trend Indicators 📈
+1.  **EMA Crossover:** `EMA(9)` must be ABOVE `EMA(20)`.
+2.  **Price Strength:** `Close` > `EMA(9)` AND `Close` > `VWAP`.
+3.  **Momentum:** `RSI(14)` > **55** (Rising Strength).
+
+### B. Candle Pattern 🕯️
+1.  **Color:** Must be a **GREEN** candle (Close > Open).
+2.  **Heikin-Ashi:** Must be **Green** (Trend Continuation).
+3.  **Volume:** Current Volume > `SMA(20, Volume)` (Volume Breakout).
+
+### C. The "Guards" (Filters) 🛡️
+1.  **Extension Guard:**
+    *   Formula: [(Close - EMA20) / EMA20](file:///C:/Users/Ashbin/.gemini/antigravity/brain/2df2ed12-f98d-4c89-bf98-dea5fc2acbc3/config.py#67-74)
+    *   Must be **LESS than** the Extension Limit (1.5% or 3.0% defined by Sentinel).
+2.  **Late Entry Guard:**
+    *   Verifies we are catching the *start* of the move, not the end.
+
+---
+
+## 5. Exit Rules (Money Management)
+Once in a trade, we manage it automatically:
+
+*   **Stop Loss (SL):** Fixed at **0.8%** initially.
+*   **Target 1:** **0.6%** (Move SL to Breakeven).
+*   **Target 2:** **1.2%** (Trail SL Aggressively).
+*   **Target 3:** **2.0%** (Runners).
+
+---
+
+## 6. Execution Protocol
+*   **Order Type:** MARKET Orders (Priority on getting IN).
+*   **Frequency:** Continuous scanning every loop.
+*   **Max Trades:** Controlled by available capital/limits.

@@ -1,0 +1,63 @@
+# Async Scanner Implementation Plan 🚀
+
+## Goal
+Reduce scan time from ~12 minutes to < 1 minute for ~2400 stocks using AsyncIO and Parallel HTTP requests.
+
+## Architecture
+
+### 1. New Module: `async_scanner.py`
+This module will handle all high-concurrency tasks.
+
+- **Dependencies**: `aiohttp`, `asyncio`, `logging`, `pandas`
+- **Classes**:
+    - `AsyncScanner`
+        - [__init__(self, api_key, jwt_token, client_code)](file:///C:/Users/Ashbin/.gemini/antigravity/brain/2df2ed12-f98d-4c89-bf98-dea5fc2acbc3/ws_hub.py#9-11)
+        - `fetch_candle_async(session, symbol, token)`: Raw HTTP call to Angel One.
+        - `process_stock(session, stock_data)`: Fetch -> Indicators (Pandas) -> Buy Logic.
+        - `scan(stocks_list)`: Entry point, manages `Semaphore` and `ClientSession`.
+
+### 2. Integration: [main.py](file:///C:/Users/Ashbin/.gemini/antigravity/brain/2df2ed12-f98d-4c89-bf98-dea5fc2acbc3/main.py)
+- Replace the nested `for sector in sectors: for stock in stocks:` loop.
+- **New Flow**:
+    1. Fetch Sectors.
+    2. Fetch Stocks for ALL target sectors.
+    3. De-duplicate stocks (set of symbols).
+    4. Pass the consolidated list (e.g., 200-500 stocks) to `AsyncScanner.scan()`.
+    5. Receive `signals` list.
+    6. Iterate signals -> [place_buy_order](file:///C:/Users/Ashbin/.gemini/antigravity/brain/2df2ed12-f98d-4c89-bf98-dea5fc2acbc3/main.py#68-95) (Sync) -> Update State.
+
+### 3. Safety Mechanisms
+- **Semaphore**: Limit concurrency to 50-80 tasks to avoid Rate Limits.
+- **Error Handling**: Graceful failure for individual stock fetch errors (don't crash the loop).
+- **Closed Candle Enforcement**: Already in [indicators.py](file:///C:/Users/Ashbin/.gemini/antigravity/brain/2df2ed12-f98d-4c89-bf98-dea5fc2acbc3/indicators.py), will be preserved.
+
+## File Changes
+
+### [NEW] `async_scanner.py`
+```python
+import asyncio
+import aiohttp
+import logging
+from indicators import calculate_indicators, check_buy_condition
+from utils import get_ist_now
+
+class AsyncScanner:
+    def __init__(self, jwt_token, api_key):
+        self.jwt_token = jwt_token
+        self.api_key = api_key
+        # ... logic ...
+```
+
+### [MODIFY] [main.py](file:///C:/Users/Ashbin/.gemini/antigravity/brain/2df2ed12-f98d-4c89-bf98-dea5fc2acbc3/main.py)
+- Import `AsyncScanner` (or function).
+- Initialize `AsyncScanner` with session tokens.
+- Replace synchronous scanning loop with `await` (or `asyncio.run` wrapper if main is sync).
+    - Since [main.py](file:///C:/Users/Ashbin/.gemini/antigravity/brain/2df2ed12-f98d-4c89-bf98-dea5fc2acbc3/main.py) uses `time.sleep` and is fundamentally sync, we can use `asyncio.run(scanner.scan(stocks))` for the specific block.
+
+## Risk Management
+- **Rate Limits**: Angel One has limits. 80 concurrent requests might trigger it. We will tune `Semaphore` starting at 20.
+- **CPU Bound**: [calculate_indicators](file:///C:/Users/Ashbin/.gemini/antigravity/brain/2df2ed12-f98d-4c89-bf98-dea5fc2acbc3/indicators.py#3-36) (Pandas) is blocking. With 50 threads, it might lag. If so, we use `loop.run_in_executor`.
+
+## Verification
+- Compare Scan Time logs.
+- Verify Signal Accuracy (matches [indicators.py](file:///C:/Users/Ashbin/.gemini/antigravity/brain/2df2ed12-f98d-4c89-bf98-dea5fc2acbc3/indicators.py) logic).

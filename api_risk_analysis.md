@@ -1,0 +1,73 @@
+# SmartAPI Dependency & Risk Analysis
+
+## Objective
+To analyze the impact of missing or compromised data from Angel One SmartAPI on the "Sentinel" Trading Strategy and evaluate if current mitigations are sufficient.
+
+## 1. Critical Data Dependencies
+
+| Data Point | Usage | Criticality | Consequence of Failure |
+| :--- | :--- | :--- | :--- |
+| **Index LTP (Live)** | Regime Logic (Bull/Bear) | 🔴 **CRITICAL** | Cannot determine Trend. Strategy Blind. |
+| **Index High/Low** | Regime Logic (Range Position) | 🔴 **CRITICAL** | cannot calc Range Position. Defaults to Safety. |
+| **Stock Candle Data** | Indicators (EMA, RSI, Engulfing) | 🔴 **CRITICAL** | No signals generated. Bot strictly stops. |
+| **Stock LTP** | Entry/Exit Execution | 🔴 **CRITICAL** | Cannot place orders or check Stop Loss. |
+| **Token Map** | Symbol Resolution | 🟠 HIGH | Stocks skipped silently if token missing. |
+
+## 2. Failure Scenarios & Impact
+
+### Scenario A: Missing Index High/Low (The "Midnight" Issue)
+*   **Cause:** API returns `0.0` for High/Low post-market or during pre-market data gaps.
+*   **Impact:** Range calculation implies `Range = 0` (Divide by Zero risk) or invalid Position.
+*   **Mitigation (Implemented):**
+    1.  **Local Memory:** Bot remembers last valid High/Low from the day.
+    2.  **Safety Mode:** If no memory exists (e.g., fresh restart at midnight), Bot defaults to `Extension Limit = 1.5%` (Defensive).
+*   **Verdict:** **MANAGED.** The strategies degrades gracefully to "Safe Mode" rather than crashing or trading recklessly.
+
+### Scenario B: Missing Candle Data (Stock)
+*   **Cause:** `getCandleData` returns `null` or empty list.
+*   **Impact:** Indicators (EMA, RSI) cannot be calculated.
+*   **Mitigation (Native):**
+    *   Bot checks `if raw_data:`. If missing, the stock is immediately skipped.
+    *   Log: `Processing Error` or `Incomplete Data`.
+*   **Verdict:** **No Bad Trades.** The bot simply refuses to trade that stock. Opportunity loss, but no financial loss.
+
+### Scenario C: Lagging / Stale LTP
+*   **Cause:** WebSocket disconnection or API lag.
+*   **Impact:** Bot might buy a stock at `100.0` thinking it is `100.0`, but market is at `101.0`. SL/Target calculations will be off.
+*   **Mitigation:**
+    *   `AsyncScanner` fetches fresh snapshot for Analysis.
+    *   **The bot does not rely on stale WebSocket prices for decision-making.**
+    *   Order Placement uses `MARKET` order (Execution guarantee, but slippage risk).
+*   **Verdict:** **Slippage Risk.** Standard in Algorithmic Trading. Mitigated by using Limit Orders (not currently implemented) or fast execution.
+
+## 3. "Compromise" Analysis: Do we lose value?
+
+**Question:** If we don't get specific values (like Index High/Low), do we fail?
+
+**Answer:**
+*   **Without Index High/Low:** We lose the **"Aggressive Mode" (3.0% limit)**. We are forced into **"Safety Mode" (1.5% limit)**.
+    *   *Result:* We might miss some explosive trades (Extension > 1.5%), but we will NEVER take a bad trade because of this.
+    *   *Value Lost:* Potential Upside.
+    *   *Risk Gained:* None. (Actually safer).
+
+*   **Without Candle Data:** We trade nothing.
+    *   *Result:* Zero trades.
+    *   *Value Lost:* All Opportunity.
+    *   *Risk Gained:* None.
+
+## 4. Residual Risks & Recommendations
+
+| Risk | Status | Recommendation |
+| :--- | :--- | :--- |
+| **Token Map Mismatch** | Unchecked | **High Priority.** If `token_map` is outdated, stocks are skipped. **Action:** Auto-update `token_map` daily on startup. |
+| **WebSocket Disconnect** | Managed | Bot uses HTTP Polling for Scanner (Robust). WebSocket is only for monitoring active trade P&L. |
+| **API Rate Limits** | Managed | Semaphore limiting (50 concurrent) prevents 429 errors. |
+
+## Conclusion
+The strategy is **Fail-Safe**.
+If API data is compromised:
+1.  **Index Data Missing:** Bot becomes **Conservative** (Safety Mode).
+2.  **Stock Data Missing:** Bot **Stops Trading** that stock.
+
+We do **not** risk account blowout due to missing data. We only risk **missed opportunities**.
+The recent addition of **Local Index Memory** significantly reduces the "Missed Opportunity" risk for Index Data gaps.
