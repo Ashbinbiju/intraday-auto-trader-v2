@@ -409,8 +409,9 @@ def run_bot_loop(async_loop=None, ws_manager=None):
             
             # ... (Rest of logic) ...
             
-            # --- Reconciliation ---
-            if SMART_API_SESSION:
+            # --- Reconciliation (Only in Live Mode) ---
+            dry_run = config_manager.get("general", "dry_run") or False
+            if SMART_API_SESSION and not dry_run:
                  success = reconcile_state(SMART_API_SESSION)
                  if not success:
                      logger.warning("Reconciliation Failed. Attempting to Re-Authenticate...")
@@ -421,6 +422,8 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                          logger.info("Session Re-established successfully. ✅")
                      else:
                          logger.error("Session Re-authentication Failed. Will retry next cycle.")
+            elif dry_run:
+                logger.debug("Dry-Run Mode: Skipping reconciliation with broker.")
             # ----------------------
 
             # --- Manage Active Positions ---
