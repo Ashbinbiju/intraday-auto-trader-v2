@@ -17,8 +17,9 @@ if not logger.handlers:
     logger.setLevel(logging.INFO)
 
 class AsyncScanner:
-    def __init__(self, jwt_token, concurrency=50, timeout=3):
+    def __init__(self, jwt_token, smartApi=None, concurrency=50, timeout=3):
         self.jwt_token = jwt_token
+        self.smartApi = smartApi # Store SmartAPI Object
         self.api_key = API_KEY
         self.client_code = CLIENT_CODE
         self.sem = asyncio.Semaphore(concurrency)
@@ -40,63 +41,40 @@ class AsyncScanner:
         }
 
     async def fetch_candle_data(self, session, symbol, token):
-        # Fetch 5 days to be safe for 20 EMA
-        now = datetime.now()
-        to_date = now.strftime("%Y-%m-%d %H:%M")
-        from_date = (now - pd.Timedelta(days=5)).strftime("%Y-%m-%d %H:%M")
+        """
+        Delegates data fetching to the robust smart_api_helper function.
+        Run in ThreadPoolExecutor because smartApi.getCandleData is blocking.
+        """
+        # We don't use 'session' (aiohttp) anymore, we use self.smartApi (SmartConnect Object)
+        if not self.smartApi:
+            logger.error(f"❌ [Async] SmartAPI Object missing for {symbol}")
+            return symbol, None
+
+        loop = asyncio.get_running_loop()
         
-        payload = {
-            "exchange": "NSE",
-            "symboltoken": str(token),
-            "interval": "FIFTEEN_MINUTE",
-            "fromdate": from_date,
-            "todate": to_date
-        }
+        try:
+            # Call the Verified Helper Function (Blocking)
+            # Signature: fetch_candle_data(smartApi, token, symbol, interval, days, retries, delay)
+            df = await loop.run_in_executor(
+                None, 
+                fetch_candle_data, 
+                self.smartApi, 
+                token, 
+                symbol, 
+                "FIFTEEN_MINUTE", 
+                5, 3, 1 # Default params
+            )
+            
+            if df is not None and not df.empty:
+                # Success! Return DF directly.
+                return symbol, df
+            
+            return symbol, None
 
-        retries = 3
-        delay = 1.0
+        except Exception as e:
+            logger.error(f"❌ [Async] Wrapper Error {symbol}: {e}")
+            return symbol, None
 
-        for i in range(retries):
-            try:
-                async with session.post(self.base_url + self.endpoint, json=payload, headers=self.headers) as response:
-                    data = await response.json()
-                    
-                    if response.status == 200:
-                        # Success Check
-                        status = data.get('status')
-                        if status is True or str(status).lower() == 'true':
-                            return symbol, data.get('data')
-                        
-                        # API Level Error Inside 200 OK
-                        msg = str(data.get('message', '')).lower()
-                        errorcode = data.get('errorcode')
-                        
-                        # Rate Limit Check
-                        if "access rate" in msg or "access denied" in msg or errorcode == 'AB2001':
-                            logger.warning(f"⚠️ [Async] Rate Limit hit for {symbol}. Retrying in {delay}s... ({i+1}/{retries})")
-                            await asyncio.sleep(delay)
-                            continue
-                        
-                        # Other API Errors
-                        logger.error(f"❌ [Async] API Error {symbol}: {msg} | Code: {errorcode}")
-                        return symbol, None
-
-                    elif response.status == 429: # Explicit Rate Limit
-                         logger.warning(f"⚠️ [Async] HTTP 429 Rate Limit for {symbol}. Retrying...")
-                         await asyncio.sleep(delay)
-                         continue
-                    
-                    else:
-                        text = await response.text()
-                        logger.error(f"❌ [Async] HTTP Error {symbol}: {response.status} | Body: {text}")
-                        return symbol, None
-
-            except Exception as e:
-                logger.error(f"❌ [Async] Excep {symbol}: {e}")
-                await asyncio.sleep(delay)
-                continue
-        
-        return symbol, None
 
     async def bounded_fetch(self, session, symbol, token):
         async with self.sem:
@@ -242,25 +220,36 @@ class AsyncScanner:
             for task in asyncio.as_completed(tasks):
                 symbol, raw_data = await task
                 
-                if not raw_data:
-                    logger.warning(f"[DEBUG_DATA] {symbol}: ❌ No Data (Raw Empty)")
+                # Check for None (Failed Fetch)
+                if raw_data is None:
                     continue
 
-                if raw_data:
-                    logger.info(f"[DEBUG_DATA] {symbol}: ✅ Fetched {len(raw_data)} candles")
-                    try:
-                        # Create DF
-                        df = pd.DataFrame(raw_data, columns=['datetime', 'open', 'high', 'low', 'close', 'volume'])
-                        df['datetime'] = pd.to_datetime(df['datetime'])
+                if raw_data is not None:
+                    # Check if it's already a DataFrame (from smart_api_helper delegator)
+                    if isinstance(raw_data, pd.DataFrame):
+                        df = raw_data
+                        logger.info(f"[DEBUG_DATA] {symbol}: ✅ Fetched {len(df)} candles")
+                    
+                    # Legacy fallback (list of lists) - kept just in case
+                    elif isinstance(raw_data, list):
+                        logger.info(f"[DEBUG_DATA] {symbol}: ✅ Fetched {len(raw_data)} candles (List)")
+                        try:
+                            df = pd.DataFrame(raw_data, columns=['datetime', 'open', 'high', 'low', 'close', 'volume'])
+                            df['datetime'] = pd.to_datetime(df['datetime'])
+                            # Conversion
+                            df['close'] = df['close'].astype(float)
+                            df['volume'] = df['volume'].astype(int)
+                            df['open'] = df['open'].astype(float)
+                        except Exception as e:
+                            logger.error(f"DataFrame Conversion Failed for {symbol}: {e}")
+                            continue
+                    else:
+                        logger.warning(f"[DEBUG_DATA] {symbol}: ❌ Unknown Data Format: {type(raw_data)}")
+                        continue
                         
-                        # Conversion
-                        df['close'] = df['close'].astype(float)
-                        df['volume'] = df['volume'].astype(int)
-                        # df['high'] = df['high'].astype(float) # Not strictly needed for Buy Check but good for completion
-                        df['open'] = df['open'].astype(float) # Needed for Green Candle Check
-                        
-                        # Indicators
-                        df = calculate_indicators(df)
+                    # Indicators
+                    df = calculate_indicators(df)
+
                         
                         # Check Buy Condition (Strict Closed Candle)
                         screener_ltp = 0.0 # Placeholder, indicator ignores it now
