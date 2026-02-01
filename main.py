@@ -2,6 +2,7 @@ import logging
 import time
 import sys
 import asyncio
+import pandas as pd
 from scraper import fetch_top_performing_sectors, fetch_stocks_in_sector, fetch_market_indices
 from smart_api_helper import get_smartapi_session, fetch_candle_data, load_instrument_map, fetch_net_positions, verify_order_status
 from indicators import calculate_indicators, check_buy_condition
