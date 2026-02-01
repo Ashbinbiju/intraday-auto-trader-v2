@@ -53,18 +53,50 @@ class AsyncScanner:
             "todate": to_date
         }
 
-        try:
-            async with session.post(self.base_url + self.endpoint, json=payload, headers=self.headers) as response:
-                if response.status == 200:
+        retries = 3
+        delay = 1.0
+
+        for i in range(retries):
+            try:
+                async with session.post(self.base_url + self.endpoint, json=payload, headers=self.headers) as response:
                     data = await response.json()
-                    # Check for explicit True (bool or string)
-                    status = data.get('status')
-                    if status is True or str(status).lower() == 'true':
-                        return symbol, data.get('data')
-                return symbol, None
-        except Exception as e:
-            # logger.warning(f"Fetch Failed {symbol}: {e}") 
-            return symbol, None
+                    
+                    if response.status == 200:
+                        # Success Check
+                        status = data.get('status')
+                        if status is True or str(status).lower() == 'true':
+                            return symbol, data.get('data')
+                        
+                        # API Level Error Inside 200 OK
+                        msg = str(data.get('message', '')).lower()
+                        errorcode = data.get('errorcode')
+                        
+                        # Rate Limit Check
+                        if "access rate" in msg or "access denied" in msg or errorcode == 'AB2001':
+                            logger.warning(f"⚠️ [Async] Rate Limit hit for {symbol}. Retrying in {delay}s... ({i+1}/{retries})")
+                            await asyncio.sleep(delay)
+                            continue
+                        
+                        # Other API Errors
+                        logger.error(f"❌ [Async] API Error {symbol}: {msg} | Code: {errorcode}")
+                        return symbol, None
+
+                    elif response.status == 429: # Explicit Rate Limit
+                         logger.warning(f"⚠️ [Async] HTTP 429 Rate Limit for {symbol}. Retrying...")
+                         await asyncio.sleep(delay)
+                         continue
+                    
+                    else:
+                        text = await response.text()
+                        logger.error(f"❌ [Async] HTTP Error {symbol}: {response.status} | Body: {text}")
+                        return symbol, None
+
+            except Exception as e:
+                logger.error(f"❌ [Async] Excep {symbol}: {e}")
+                await asyncio.sleep(delay)
+                continue
+        
+        return symbol, None
 
     async def bounded_fetch(self, session, symbol, token):
         async with self.sem:
