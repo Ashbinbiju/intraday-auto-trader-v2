@@ -67,3 +67,26 @@
         - [x] Dual Confirmation (Close < EMA20 AND Close < VWAP).
         - [x] Time-Based Stagnation Exit (> 60m). Implemented `AsyncScanner` (aiohttp) to reduce market scan time from ~12m to <60s. <!-- id: 46 -->
     - [x] Verify End-to-End Flow (Config -> Bot -> Trade -> Exit) <!-- id: 42 -->
+- [x] **SmartAPI Index Data** <!-- id: 70 -->
+    - [x] Verify `ltpData` for 26000/26009
+    - [x] Implement Sentinel Logic (Range Position > 0.55)
+    - [x] Expand Scanner to Top 4 Sectors
+    - [x] Implement Local High/Low Cache (`index_memory`)
+    - [x] Integrate Reliable Index API (`brkpoint.in`)
+
+- [x] **System Reliability & Documentation** <!-- id: 71 -->
+    - [x] Fix `start_time` Loop Crash
+    - [x] Implement Granular Logging (Regime, Entry Guard)
+    - [x] Update Holiday Calendar (2026)
+    - [x] Create Strategy Note (`strategy_summary.md`)
+    - [x] Update Holiday Calendar (2026)
+    - [x] Create Strategy Note (`strategy_summary.md`)
+    - [x] Create API Risk Analysis (`api_risk_analysis.md`)
+
+- [ ] **Debugging & Verification** <!-- id: 72 -->
+    - [x] Investigate "Zero Signals" (Confirmed Rate Limit)
+    - [x] Enable Global Debug Logging (`async_scanner.py`)
+    - [x] Implement Rate Limiting (3 req/s)
+    - [ ] Analyze Rejection Logs
+
+
