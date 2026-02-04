@@ -27,6 +27,25 @@ export default function JournalPage() {
         }
     }, [wsData]);
 
+    // Calculate trade grade based on R:R ratio
+    const getTradeGrade = (trade: any) => {
+        const rrRatio = trade.rr_ratio || 0;
+        if (rrRatio >= 3.0) return 'A+';
+        if (rrRatio >= 2.0) return 'A';
+        if (rrRatio >= 1.5) return 'B';
+        return 'C';
+    };
+
+    const getGradeColor = (grade: string) => {
+        switch (grade) {
+            case 'A+': return 'bg-purple-500/20 text-purple-400 border border-purple-500/50';
+            case 'A': return 'bg-green-500/20 text-green-400 border border-green-500/50';
+            case 'B': return 'bg-blue-500/20 text-blue-400 border border-blue-500/50';
+            case 'C': return 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/50';
+            default: return 'bg-gray-500/20 text-gray-400 border border-gray-500/50';
+        }
+    };
+
     if (loading) return <div className="p-10 text-center text-gray-400 animate-pulse">Loading Trade History...</div>;
 
     return (
@@ -42,6 +61,7 @@ export default function JournalPage() {
                             <th className="px-6 py-4">Symbol</th>
                             <th className="px-6 py-4">Grade</th>
                             <th className="px-6 py-4">Entry Time</th>
+                            <th className="px-6 py-4">Exit Time</th>
                             <th className="px-6 py-4">Entry Price</th>
                             <th className="px-6 py-4">Exit Price</th>
                             <th className="px-6 py-4">P&L %</th>
@@ -52,22 +72,22 @@ export default function JournalPage() {
                         {trades.map((trade: any, i) => {
                             const pnl = ((trade.exit_price - trade.entry_price) / trade.entry_price) * 100;
                             const isWin = pnl > 0;
+                            const grade = getTradeGrade(trade);
 
                             return (
                                 <tr key={i} className="hover:bg-white/5 transition-colors">
                                     <td className="px-6 py-4 font-bold text-white max-w-[200px] truncate">{trade.symbol}</td>
                                     <td className="px-6 py-4">
-                                        {trade.setup_grade && (
-                                            <span className={`px-2 py-1 text-xs font-bold rounded ${trade.setup_grade === 'A+' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/50' :
-                                                trade.setup_grade === 'A' ? 'bg-green-500/20 text-green-400 border border-green-500/50' :
-                                                    trade.setup_grade === 'ORPHAN' ? 'bg-yellow-500/20 text-yellow-500 border border-yellow-500/50' :
-                                                        'bg-blue-500/20 text-blue-400 border border-blue-500/50'
-                                                }`}>
-                                                {trade.setup_grade}
-                                            </span>
-                                        )}
+                                        <span className={`px-2 py-1 text-xs font-bold rounded ${getGradeColor(grade)}`}>
+                                            {grade}
+                                        </span>
                                     </td>
-                                    <td className="px-6 py-4 text-gray-400">{trade.entry_time}</td>
+                                    <td className="px-6 py-4 text-gray-400 font-mono text-xs">
+                                        {trade.entry_time ? new Date(trade.entry_time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '-'}
+                                    </td>
+                                    <td className="px-6 py-4 text-gray-400 font-mono text-xs">
+                                        {trade.exit_time ? new Date(trade.exit_time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '-'}
+                                    </td>
                                     <td className="px-6 py-4 font-mono">₹{trade.entry_price}</td>
                                     <td className="px-6 py-4 font-mono">₹{trade.exit_price}</td>
                                     <td className={`px-6 py-4 font-bold ${isWin ? 'text-green-400' : 'text-red-400'}`}>
@@ -81,7 +101,7 @@ export default function JournalPage() {
                         })}
                         {trades.length === 0 && !loading && (
                             <tr>
-                                <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
+                                <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
                                     No closed trades recorded yet.
                                 </td>
                             </tr>
