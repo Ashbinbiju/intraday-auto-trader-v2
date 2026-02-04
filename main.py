@@ -381,10 +381,9 @@ def manage_positions(smartApi, token_map):
             continue
 
         try:
-            # 0. Check Auto Square-Off Time (User Requested 14:45)
-            # Was 15:15, now strict 14:45 Exit
-            if current_time >= "14:45":
-                logger.info(f"⏰ Time Limit Reached (14:45). Booking Profit/Loss for {symbol}...")
+            # 0. Check Auto Square-Off Time (Use Config Value)
+            if current_time >= square_off_time:
+                logger.info(f"⏰ Time Limit Reached ({square_off_time}). Booking Profit/Loss for {symbol}...")
                 
                 # Fetch current LTP before closing
                 time.sleep(0.2)  # Throttle
