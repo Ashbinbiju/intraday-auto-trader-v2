@@ -283,13 +283,14 @@ class AsyncScanner:
                                     logger.error(f"❌ {symbol}: LTP fetch error: {e}")
                                     live_ltp = stock_info['ltp'] if stock_info else 0.0
 
-                            signals.append({
-                                'symbol': symbol,
-                                'price': live_ltp,  # Now using LIVE price from Angel One
-                                'message': message,
-                                'sector': sector_name,
-                                'time': get_ist_now().strftime("%Y-%m-%d %H:%M:%S")
-                            })
+                                # Add signal (MUST be inside if buy_signal block)
+                                signals.append({
+                                    'symbol': symbol,
+                                    'price': live_ltp,  # Now using LIVE price from Angel One
+                                    'message': message,
+                                    'sector': sector_name,
+                                    'time': get_ist_now().strftime("%Y-%m-%d %H:%M:%S")
+                                })
                         else:
                             # Log ALL rejections for debugging (since we have 0 signals)
                             last_row = df.iloc[-1]
