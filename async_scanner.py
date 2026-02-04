@@ -257,6 +257,7 @@ class AsyncScanner:
                                 logger.info(f"❌ {symbol} REJECTED: {bias_reason}")
                                 continue
                             
+                            
                             # Step 2: Check 5M Entry Signal
                             df_5m = calculate_indicators(df_5m)
                             screener_ltp = 0.0
@@ -268,11 +269,23 @@ class AsyncScanner:
                                 # Retrieve sector
                                 stock_info = next((s for s in stocks_list if s['symbol'] == symbol), None)
                                 sector_name = stock_info.get('sector', 'Unknown') if stock_info else "Unknown"
-                                actual_ltp = stock_info['ltp'] if stock_info else 0.0
+                                
+                                # FIX: Fetch LIVE price from Angel One instead of using stale scraper price
+                                live_ltp = 0.0
+                                try:
+                                    from smart_api_helper import fetch_ltp
+                                    live_ltp = fetch_ltp(self.smartApi, token, symbol)
+                                    if live_ltp is None or live_ltp == 0:
+                                        # Fallback to scraper price if Angel API fails
+                                        live_ltp = stock_info['ltp'] if stock_info else 0.0
+                                        logger.warning(f"⚠️ {symbol}: Using scraper price (Angel LTP failed)")
+                                except Exception as e:
+                                    logger.error(f"❌ {symbol}: LTP fetch error: {e}")
+                                    live_ltp = stock_info['ltp'] if stock_info else 0.0
 
                             signals.append({
                                 'symbol': symbol,
-                                'price': actual_ltp,
+                                'price': live_ltp,  # Now using LIVE price from Angel One
                                 'message': message,
                                 'sector': sector_name,
                                 'time': get_ist_now().strftime("%Y-%m-%d %H:%M:%S")
