@@ -1,13 +1,15 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { ArrowRight, AlertCircle, CheckCircle } from 'lucide-react';
+import { ArrowRight, AlertCircle, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 
 import { getBaseUrl } from '@/lib/api';
 import { useWebSocket } from '@/hooks/useWebSocket';
 
 export default function SignalsPage() {
     const [loading, setLoading] = useState(true);
+    const [currentPage, setCurrentPage] = useState(1);
+    const signalsPerPage = 20;
 
     const { data: wsData, isConnected } = useWebSocket();
     const [signals, setSignals] = useState([]);
@@ -38,6 +40,20 @@ export default function SignalsPage() {
         }
     }, []);
 
+    // Pagination logic
+    const totalPages = Math.ceil(signals.length / signalsPerPage);
+    const startIndex = (currentPage - 1) * signalsPerPage;
+    const endIndex = startIndex + signalsPerPage;
+    const currentSignals = signals.slice(startIndex, endIndex);
+
+    const goToNextPage = () => {
+        if (currentPage < totalPages) setCurrentPage(currentPage + 1);
+    };
+
+    const goToPrevPage = () => {
+        if (currentPage > 1) setCurrentPage(currentPage - 1);
+    };
+
     if (loading) return <div className="p-10 text-center text-gray-400 animate-pulse">Loading Live Signals...</div>;
 
     return (
@@ -64,7 +80,7 @@ export default function SignalsPage() {
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-white/10">
-                        {signals.map((signal: any, i) => (
+                        {currentSignals.map((signal: any, i) => (
                             <tr key={i} className="hover:bg-white/5 transition-colors">
                                 <td className="px-6 py-4 text-gray-400 font-mono">{signal.time.split(' ')[1]}</td>
                                 <td className="px-6 py-4 font-bold text-white">{signal.symbol}</td>
@@ -94,6 +110,38 @@ export default function SignalsPage() {
                     </tbody>
                 </table>
             </div>
+
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+                <div className="flex items-center justify-between px-4 py-3 bg-white/5 border border-white/10 rounded-xl">
+                    <div className="text-sm text-gray-400">
+                        Showing <span className="font-medium text-white">{startIndex + 1}</span> to{' '}
+                        <span className="font-medium text-white">{Math.min(endIndex, signals.length)}</span> of{' '}
+                        <span className="font-medium text-white">{signals.length}</span> signals
+                    </div>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={goToPrevPage}
+                            disabled={currentPage === 1}
+                            className="px-3 py-2 bg-white/10 hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors flex items-center gap-1"
+                        >
+                            <ChevronLeft size={16} />
+                            Previous
+                        </button>
+                        <div className="px-4 py-2 bg-white/10 rounded-lg text-sm">
+                            Page {currentPage} of {totalPages}
+                        </div>
+                        <button
+                            onClick={goToNextPage}
+                            disabled={currentPage === totalPages}
+                            className="px-3 py-2 bg-white/10 hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors flex items-center gap-1"
+                        >
+                            Next
+                            <ChevronRight size={16} />
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
