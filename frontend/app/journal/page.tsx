@@ -83,10 +83,10 @@ export default function JournalPage() {
                                         </span>
                                     </td>
                                     <td className="px-6 py-4 text-gray-400 font-mono text-xs">
-                                        {trade.entry_time ? new Date(trade.entry_time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '-'}
+                                        {trade.entry_time || '-'}
                                     </td>
                                     <td className="px-6 py-4 text-gray-400 font-mono text-xs">
-                                        {trade.exit_time ? new Date(trade.exit_time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '-'}
+                                        {trade.exit_time || '-'}
                                     </td>
                                     <td className="px-6 py-4 font-mono">₹{trade.entry_price}</td>
                                     <td className="px-6 py-4 font-mono">₹{trade.exit_price}</td>
