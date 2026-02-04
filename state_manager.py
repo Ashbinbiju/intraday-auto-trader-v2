@@ -73,9 +73,10 @@ def save_state(state):
     except Exception as e:
         logger.error(f"Error saving state: {e}")
 
-def start_auto_save(state, interval=10):
+def start_auto_save(state, interval=60):
     """
     Starts a background thread to auto-save state periodically.
+    Default: Every 60 seconds (reduced from 10s to minimize log spam)
     """
     def loop():
         while True:

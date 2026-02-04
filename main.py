@@ -60,14 +60,18 @@ buffer_handler = LogBufferHandler()
 buffer_handler.setFormatter(formatter)
 root_logger.addHandler(buffer_handler)
 
+# Suppress noisy HTTP logs from Supabase client
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+
 logger = logging.getLogger("MainBot")
 
 # --- GLOBAL STATE INITIALIZATION ---
 # Load state from disk or use default
 BOT_STATE = load_state()
 
-# Start background auto-save (every 10s)
-start_auto_save(BOT_STATE, interval=10)
+# Start background auto-save (every 60s to reduce log spam)
+start_auto_save(BOT_STATE, interval=60)
 # -----------------------------------
 
 def place_buy_order(smartApi, symbol, token, qty):
