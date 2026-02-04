@@ -1,0 +1,5 @@
+{
+  "artifactType": "ARTIFACT_TYPE_IMPLEMENTATION_PLAN",
+  "summary": "Detailed guide for setting up Supabase integration. Includes steps to create a project, obtain credentials, and the SQL schema to run. Also outlines the code changes required to replace local JSON storage with Supabase.",
+  "updatedAt": "2026-02-01T10:58:08.218417800Z"
+}
