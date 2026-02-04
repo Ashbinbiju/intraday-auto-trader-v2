@@ -685,6 +685,11 @@ def run_bot_loop(async_loop=None, ws_manager=None):
             elif dry_run:
                 logger.debug("Dry-Run Mode: Skipping reconciliation with broker.")
             # ----------------------
+            
+            # --- Daily Signal Reset ---
+            from state_manager import check_and_reset_daily_signals
+            check_and_reset_daily_signals(BOT_STATE)
+            # --------------------------
 
             # --- Manage Active Positions ---
             manage_positions(smartApi, token_map)

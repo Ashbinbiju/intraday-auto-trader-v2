@@ -84,3 +84,37 @@ def start_auto_save(state, interval=10):
             
     t = threading.Thread(target=loop, daemon=True)
     t.start()
+
+def check_and_reset_daily_signals(state):
+    """
+    Clears signals if it's a new trading day.
+    Checks the timestamp of the last signal and compares with current date.
+    """
+    from datetime import datetime
+    
+    with state_lock:
+        signals = state.get("signals", [])
+        
+        if not signals:
+            return  # No signals to clear
+        
+        # Get the date of the last signal
+        last_signal = signals[-1]
+        last_signal_time = last_signal.get("time", "")
+        
+        if not last_signal_time:
+            return
+        
+        try:
+            # Parse the signal timestamp (format: "YYYY-MM-DD HH:MM:SS")
+            last_signal_date = datetime.strptime(last_signal_time, "%Y-%m-%d %H:%M:%S").date()
+            current_date = datetime.now().date()
+            
+            # If it's a new day, clear signals
+            if current_date > last_signal_date:
+                logger.info(f"🗑️ New trading day detected. Clearing {len(signals)} old signals from {last_signal_date}")
+                state["signals"] = []
+                save_state(state)
+        except Exception as e:
+            logger.error(f"Error checking signal date: {e}")
+
