@@ -127,14 +127,21 @@ def check_and_reset_daily_signals(state):
                 entry_time_str = pos.get("entry_time", "")
                 if entry_time_str:
                     try:
-                        # Parse entry time (format: "YYYY-MM-DD HH:MM:SS")
-                        entry_date = datetime.strptime(entry_time_str, "%Y-%m-%d %H:%M:%S").date()
-                        
-                        # If trade is from a previous day, mark for removal
-                        if entry_date < current_date:
-                            positions_to_remove.append(symbol)
+                        # Try to parse full datetime format first
+                        if " " in entry_time_str and "-" in entry_time_str:
+                            # Format: "YYYY-MM-DD HH:MM:SS"
+                            entry_date = datetime.strptime(entry_time_str, "%Y-%m-%d %H:%M:%S").date()
+                            
+                            # If trade is from a previous day, mark for removal
+                            if entry_date < current_date:
+                                positions_to_remove.append(symbol)
+                        else:
+                            # Format: "HH:MM" or "HH:MM:SS" (time only, no date)
+                            # Assume it's from today if it's time-only format
+                            # We can't determine the date, so skip this position
+                            logger.debug(f"Skipping {symbol}: entry_time has no date ({entry_time_str})")
                     except Exception as e:
-                        logger.error(f"Error parsing entry_time for {symbol}: {e}")
+                        logger.debug(f"Could not parse entry_time for {symbol}: {e}")
         
         # Remove old closed positions
         if positions_to_remove:
