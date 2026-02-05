@@ -744,7 +744,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
             # ... (Scanning) ...
             sectors = fetch_top_performing_sectors()
             if not sectors:
-                logger.info("No positive performing sectors found. Skipping scan. 📉")
+                logger.info("No sector data available. Skipping scan. 📉")
                 # Broaden search or just wait? For now, wait.
                 pass
             

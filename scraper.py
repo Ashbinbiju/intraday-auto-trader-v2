@@ -40,16 +40,15 @@ def fetch_top_performing_sectors():
 
         for i, sector_name in enumerate(labels):
             pct_change = percentages[i]
-            if pct_change > 0: # Filter for positive sectors
-                # Use keyword if available, else label, for the next API call
-                api_key = keywords[i] if i < len(keywords) else sector_name
-                sectors.append({
-                    "name": sector_name,
-                    "key": api_key,
-                    "change": pct_change
-                })
+            # Use keyword if available, else label, for the next API call
+            api_key = keywords[i] if i < len(keywords) else sector_name
+            sectors.append({
+                "name": sector_name,
+                "key": api_key,
+                "change": pct_change
+            })
         
-        # Sort by percentage change descending
+        # Sort by percentage change descending (best performers first, regardless of sign)
         sectors.sort(key=lambda x: x['change'], reverse=True)
         return sectors
 
