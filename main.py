@@ -737,15 +737,18 @@ def run_bot_loop(async_loop=None, ws_manager=None):
             # --- Fetch Market Indices (New) ---
             indices = fetch_market_indices()
             if indices:
-            BOT_STATE["indices"] = indices
-            broadcast_state() # Update UI with indices
+                BOT_STATE["indices"] = indices
+                broadcast_state() # Update UI with indices
             # ----------------------------------
             
             # ... (Scanning) ...
             sectors = fetch_top_performing_sectors()
+                
+            # ... (Scanning) ...
+            sectors = fetch_top_performing_sectors()
             if not sectors:
-            logger.info("No sector data available. Skipping scan. 📉")
-            pass
+                logger.info("No sector data available. Skipping scan. 📉")
+                pass
             
             target_sectors = sectors[:4] if sectors else []
             BOT_STATE["top_sectors"] = target_sectors
@@ -754,9 +757,9 @@ def run_bot_loop(async_loop=None, ws_manager=None):
             seen_symbols = set()
             
             for sector in target_sectors:
-            # ... check stocks ...
-            stocks = fetch_stocks_in_sector(sector['key'])
-            for stock in stocks:
+                # ... check stocks ...
+                stocks = fetch_stocks_in_sector(sector['key'])
+                for stock in stocks:
             symbol = stock['symbol']
             
             # Dedup
