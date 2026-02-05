@@ -854,6 +854,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                 time.sleep(10) # Pause before retry loop
                 # The loop will continue, effectively restarting the cycle
                                     
+                                    
                                     # Calculate indicators (VWAP, EMAs)
                                     df_risk = calculate_indicators(df_risk)
                                     
