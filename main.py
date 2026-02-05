@@ -800,21 +800,21 @@ def run_bot_loop(async_loop=None, ws_manager=None):
             # Save Updated Memory (Logic in Scanner updates the dict in-place)
             save_state(BOT_STATE) 
             
-                # Process Signals Sequentially
-                for signal_data in signals:
-                    symbol = signal_data['symbol']
-                    message = signal_data['message']
-                    price = signal_data['price']
-                    
-                    # Check Daily Limit again (in case multiple signals triggered)
-                    if BOT_STATE["total_trades_today"] >= max_trades_day: 
-                        break
+            # Process Signals Sequentially
+            for signal_data in signals:
+                symbol = signal_data['symbol']
+                message = signal_data['message']
+                price = signal_data['price']
+                
+                # Check Daily Limit again (in case multiple signals triggered)
+                if BOT_STATE["total_trades_today"] >= max_trades_day: 
+                    break
 
-                    # Record Signal
-                    if not any(s['symbol'] == symbol and s['time'] == signal_data['time'] for s in BOT_STATE['signals']):
-                        BOT_STATE['signals'].insert(0, signal_data)
-                        if len(BOT_STATE['signals']) > 50: BOT_STATE['signals'] = BOT_STATE['signals'][:50]
-                        broadcast_state()
+                # Record Signal
+                if not any(s['symbol'] == symbol and s['time'] == signal_data['time'] for s in BOT_STATE['signals']):
+                    BOT_STATE['signals'].insert(0, signal_data)
+                    if len(BOT_STATE['signals']) > 50: BOT_STATE['signals'] = BOT_STATE['signals'][:50]
+                    broadcast_state()
 
                     # --- AUTO BUY LOGIC (Structure-Based Risk) ---
                     if message.startswith("Strong Buy"):
