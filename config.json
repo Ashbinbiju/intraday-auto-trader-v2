@@ -4,29 +4,30 @@
         "target_pct": 0.02,
         "trail_be_trigger": 0.012
     },
-    "structure_risk": {
-        "use_structure_based": true,
-        "min_sl_distance_pct": 0.8,
-        "max_sl_distance_pct": 2.0,
-        "sl_buffer_pct": 0.002,
-        "min_risk_reward": 1.5
-    },
-    "position_sizing": {
-        "mode": "dynamic",
-        "risk_per_trade_pct": 1.0,
-        "max_position_size_pct": 20.0,
-        "min_sl_distance_pct": 0.6,
-        "paper_trading_balance": 100000
-    },
     "limits": {
-        "max_trades_per_day": 1,
+        "max_trades_per_day": 2,
         "max_trades_per_stock": 3,
-        "trading_end_time": "14:45",
+        "trading_start_time": "09:30",
+        "trading_end_time": "03:15",
         "square_off_time": "15:15"
     },
     "general": {
         "quantity": 1,
-        "check_interval": 10,
+        "check_interval": 300,
         "dry_run": true
+    },
+    "position_sizing": {
+        "mode": "fixed",
+        "risk_per_trade_pct": 1.0,
+        "max_position_size_pct": 20.0,
+        "min_sl_distance_pct": 0.6,
+        "paper_trading_balance": 100000.0
+    },
+    "structure_risk": {
+        "sl_buffer_pct": 0.002,
+        "min_risk_reward": 1.5,
+        "max_sl_distance_pct": 2.0,
+        "min_sl_distance_pct": 0.8,
+        "use_structure_based": true
     }
 }
