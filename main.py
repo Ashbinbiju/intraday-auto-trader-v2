@@ -853,8 +853,6 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                 logger.error(traceback.format_exc())
                 time.sleep(10) # Pause before retry loop
                 # The loop will continue, effectively restarting the cycle
-                                        logger.warning(f"❌ Skipping {symbol}: Unable to fetch 5M candle data for risk calculation")
-                                        continue
                                     
                                     # Calculate indicators (VWAP, EMAs)
                                     df_risk = calculate_indicators(df_risk)
