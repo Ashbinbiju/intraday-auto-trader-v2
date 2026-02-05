@@ -1,0 +1,157 @@
+"use client";
+import React, { useState, useEffect } from 'react';
+import { BookOpen, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useWebSocket } from '@/hooks/useWebSocket';
+
+export default function JournalPage() {
+    const [trades, setTrades] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [selectedMonth, setSelectedMonth] = useState(new Date());
+    const { data: wsData } = useWebSocket();
+
+    useEffect(() => {
+        if (wsData?.positions) {
+            const allPositions = wsData.positions;
+            const closedTrades = Object.entries(allPositions)
+                .map(([symbol, data]: any) => ({ symbol, ...data }))
+                .filter((p: any) =>
+                    p.status === "CLOSED" &&
+                    p.exit_reason !== 'RECONCILIATION_MISSING' && // Exclude ghost trades
+                    p.exit_price &&
+                    p.exit_price > 0 // Exclude invalid exit prices
+                );
+            setTrades(closedTrades.reverse());
+            setLoading(false);
+        }
+    }, [wsData]);
+
+    // Calculate trade grade based on R:R ratio
+    const getTradeGrade = (trade: any) => {
+        const rrRatio = trade.rr_ratio || 0;
+        if (rrRatio >= 3.0) return 'A+';
+        if (rrRatio >= 2.0) return 'A';
+        if (rrRatio >= 1.5) return 'B';
+        return 'C';
+    };
+
+    const getGradeColor = (grade: string) => {
+        switch (grade) {
+            case 'A+': return 'bg-purple-500/20 text-purple-400 border border-purple-500/50';
+            case 'A': return 'bg-green-500/20 text-green-400 border border-green-500/50';
+            case 'B': return 'bg-blue-500/20 text-blue-400 border border-blue-500/50';
+            case 'C': return 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/50';
+            default: return 'bg-gray-500/20 text-gray-400 border border-gray-500/50';
+        }
+    };
+
+    // Calculate stats
+    const totalPnL = trades.reduce((sum, t) => sum + ((t.exit_price - t.entry_price) / t.entry_price * 100), 0);
+    const winningTrades = trades.filter(t => t.exit_price > t.entry_price).length;
+    const winRate = trades.length > 0 ? (winningTrades / trades.length * 100) : 0;
+
+    // Group trades by date
+    const tradesByDate: { [key: string]: any[] } = {};
+    trades.forEach(trade => {
+        const date = trade.entry_time?.split(' ')[0] || 'Unknown';
+        if (!tradesByDate[date]) tradesByDate[date] = [];
+        tradesByDate[date].push(trade);
+    });
+
+    // Calculate daily P&L
+    const dailyPnL: { [key: string]: number } = {};
+    Object.keys(tradesByDate).forEach(date => {
+        dailyPnL[date] = tradesByDate[date].reduce((sum, t) =>
+            sum + ((t.exit_price - t.entry_price) / t.entry_price * 100), 0
+        );
+    });
+
+    // Generate calendar days
+    const year = selectedMonth.getFullYear();
+    const month = selectedMonth.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
+    const startingDayOfWeek = firstDay.getDay();
+
+    const calendarDays = [];
+    for (let i = 0; i < startingDayOfWeek; i++) {
+        calendarDays.push(null);
+    }
+    for (let day = 1; day <= daysInMonth; day++) {
+        calendarDays.push(day);
+    }
+
+    const goToPreviousMonth = () => {
+        setSelectedMonth(new Date(year, month - 1, 1));
+    };
+
+    const goToNextMonth = () => {
+        setSelectedMonth(new Date(year, month + 1, 1));
+    };
+
+    if (loading) return <div className="p-10 text-center text-gray-400 animate-pulse">Loading Trade History...</div>;
+
+    return (
+        <div className="space-y-6">
+            <h1 className="text-3xl font-bold text-white flex items-center gap-3">
+                <BookOpen className="text-purple-400" /> Trade Journal
+            </h1>
+
+            <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden backdrop-blur-sm">
+                <table className="w-full text-left text-sm">
+                    <thead className="bg-white/5 uppercase text-xs text-gray-400">
+                        <tr>
+                            <th className="px-6 py-4">Symbol</th>
+                            <th className="px-6 py-4">Grade</th>
+                            <th className="px-6 py-4">Entry Time</th>
+                            <th className="px-6 py-4">Exit Time</th>
+                            <th className="px-6 py-4">Entry Price</th>
+                            <th className="px-6 py-4">Exit Price</th>
+                            <th className="px-6 py-4">P&L %</th>
+                            <th className="px-6 py-4">Reason</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/10">
+                        {trades.map((trade: any, i) => {
+                            const pnl = ((trade.exit_price - trade.entry_price) / trade.entry_price) * 100;
+                            const isWin = pnl > 0;
+                            const grade = getTradeGrade(trade);
+
+                            return (
+                                <tr key={i} className="hover:bg-white/5 transition-colors">
+                                    <td className="px-6 py-4 font-bold text-white max-w-[200px] truncate">{trade.symbol}</td>
+                                    <td className="px-6 py-4">
+                                        <span className={`px-2 py-1 text-xs font-bold rounded ${getGradeColor(grade)}`}>
+                                            {grade}
+                                        </span>
+                                    </td>
+                                    <td className="px-6 py-4 text-gray-400 font-mono text-xs">
+                                        {trade.entry_time || '-'}
+                                    </td>
+                                    <td className="px-6 py-4 text-gray-400 font-mono text-xs">
+                                        {trade.exit_time || '-'}
+                                    </td>
+                                    <td className="px-6 py-4 font-mono">₹{trade.entry_price}</td>
+                                    <td className="px-6 py-4 font-mono">₹{trade.exit_price}</td>
+                                    <td className={`px-6 py-4 font-bold ${isWin ? 'text-green-400' : 'text-red-400'}`}>
+                                        {isWin ? '+' : ''}{pnl.toFixed(2)}%
+                                    </td>
+                                    <td className="px-6 py-4 text-xs uppercase tracking-wider text-gray-500">
+                                        {trade.exit_reason || "AUTO"}
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                        {trades.length === 0 && !loading && (
+                            <tr>
+                                <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
+                                    No closed trades recorded yet.
+                                </td>
+                            </tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+}
