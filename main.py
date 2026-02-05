@@ -780,185 +780,185 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                     stocks_to_scan.append(stock)
 
             if BOT_STATE["total_trades_today"] >= max_trades_day:
-            time.sleep(60)
-            continue
+                time.sleep(60)
+                continue
 
             # -- ASYNC BATCH SCAN --
             if stocks_to_scan:
-            # Initialize Scanner with fresh SmartAPI Session Object
-            # Legacy: Pass token. New: Pass smartApi object for robustness.
-            scanner = AsyncScanner(smartApi.jwt_token, smartApi=smartApi)
-            
-            # Fetch Persistent Index Memory (High/Low Cache)
-            # This fixes the "Post-Market 0.0" data issue by remembering valid High/Low from earlier.
-            index_memory = BOT_STATE.setdefault("index_memory", {})
-            
-            # Run Async Scan (Blocking Call)
-            # Pass index_memory to allow Scanner to Use/Update it
-            signals = asyncio.run(scanner.scan(stocks_to_scan, token_map, index_memory))
+                # Initialize Scanner with fresh SmartAPI Session Object
+                # Legacy: Pass token. New: Pass smartApi object for robustness.
+                scanner = AsyncScanner(smartApi.jwt_token, smartApi=smartApi)
+                
+                # Fetch Persistent Index Memory (High/Low Cache)
+                # This fixes the "Post-Market 0.0" data issue by remembering valid High/Low from earlier.
+                index_memory = BOT_STATE.setdefault("index_memory", {})
+                
+                # Run Async Scan (Blocking Call)
+                # Pass index_memory to allow Scanner to Use/Update it
+                signals = asyncio.run(scanner.scan(stocks_to_scan, token_map, index_memory))
             
             # Save Updated Memory (Logic in Scanner updates the dict in-place)
             save_state(BOT_STATE) 
             
-            # Process Signals Sequentially
-            for signal_data in signals:
-            symbol = signal_data['symbol']
-            message = signal_data['message']
-            price = signal_data['price']
-            
-            # Check Daily Limit again (in case multiple signals triggered)
-            if BOT_STATE["total_trades_today"] >= max_trades_day: 
-                break
-
-            # Record Signal
-            if not any(s['symbol'] == symbol and s['time'] == signal_data['time'] for s in BOT_STATE['signals']):
-                BOT_STATE['signals'].insert(0, signal_data)
-                if len(BOT_STATE['signals']) > 50: BOT_STATE['signals'] = BOT_STATE['signals'][:50]
-                broadcast_state()
-
-            # --- AUTO BUY LOGIC (Structure-Based Risk) ---
-            if message.startswith("Strong Buy"):
-                current_trades = len([p for p in BOT_STATE["positions"].values() if p["status"] == "OPEN"])
-                if current_trades < max_trades_day:
-                    logger.info(f"🚀 Evaluating BUY for {symbol} at {price}")
+                # Process Signals Sequentially
+                for signal_data in signals:
+                    symbol = signal_data['symbol']
+                    message = signal_data['message']
+                    price = signal_data['price']
                     
-                    token = token_map.get(symbol)
-                    if token:
-                        use_structure = config_manager.get("structure_risk", "use_structure_based") or False
-                        
-                        if use_structure:
-                            # STEP 1: Re-validate 15M Bias (The Golden Rule)
-                            # Signals could be queued, market may have changed since scanner ran
-                            df_15m_recheck = fetch_candle_data(smartApi, token, symbol, "FIFTEEN_MINUTE")
+                    # Check Daily Limit again (in case multiple signals triggered)
+                    if BOT_STATE["total_trades_today"] >= max_trades_day: 
+                        break
+
+                    # Record Signal
+                    if not any(s['symbol'] == symbol and s['time'] == signal_data['time'] for s in BOT_STATE['signals']):
+                        BOT_STATE['signals'].insert(0, signal_data)
+                        if len(BOT_STATE['signals']) > 50: BOT_STATE['signals'] = BOT_STATE['signals'][:50]
+                        broadcast_state()
+
+                    # --- AUTO BUY LOGIC (Structure-Based Risk) ---
+                    if message.startswith("Strong Buy"):
+                        current_trades = len([p for p in BOT_STATE["positions"].values() if p["status"] == "OPEN"])
+                        if current_trades < max_trades_day:
+                            logger.info(f"🚀 Evaluating BUY for {symbol} at {price}")
                             
-                            if df_15m_recheck is None or df_15m_recheck.empty:
-                                logger.warning(f"❌ Skipping {symbol}: Unable to fetch 15M data for re-validation")
-                                continue
-                            
-                            from indicators import check_15m_bias, calculate_indicators
-                            df_15m_recheck = calculate_indicators(df_15m_recheck)
-                            bias_15m, bias_reason = check_15m_bias(df_15m_recheck)
-                            
-                            if bias_15m != 'BULLISH':
-                                logger.warning(f"❌ Trade REJECTED: {symbol} | 15M bias changed to {bias_15m} ({bias_reason})")
-                                continue
-                            
-                            logger.info(f"✅ 15M Bias Confirmed: {symbol} | {bias_reason}")
-                            
-                            # STEP 2: Fetch 5-minute candles for structure analysis
-                            df_risk = fetch_candle_data(smartApi, token, symbol, "FIVE_MINUTE")
-                            
-                            if df_risk is None or df_risk.empty:
-                                logger.warning(f"❌ Skipping {symbol}: No data for risk calc")
-                                continue # Don't take trade without risk calculation
-                            
-                            # Calculate indicators (VWAP, EMAs)
-                            df_risk = calculate_indicators(df_risk)
-                            
-                            if len(df_risk) < 2:
-                                logger.warning(f"❌ Skipping {symbol}: Insufficient candle data")
-                                continue
-                            
-                            # Get latest VWAP and EMA20
-                            latest_candle = df_risk.iloc[-1]
-                            vwap = latest_candle.get('VWAP')
-                            ema20 = latest_candle.get('EMA_20')
-                            
-                            if pd.isna(vwap) or pd.isna(ema20):
-                                logger.warning(f"❌ Skipping {symbol}: Missing VWAP or EMA20")
-                                continue
-                            
-                            # Calculate structure-based SL
-                            sl_price, sl_reason, sl_distance = calculate_structure_based_sl(
-                                df_risk, price, vwap, ema20
-                            )
-                            
-                            if sl_price is None:
-                                logger.warning(f"❌ Trade REJECTED: {symbol} | Reason: {sl_reason}")
-                                continue
-                            
-                            # Get PDH from bot state (if available)
-                            pdh = BOT_STATE.get("previous_day_high", {}).get(symbol)
-                            
-                            # Calculate structure-based TP
-                            target_price, tp_reason, rr_ratio = calculate_structure_based_tp(
-                                price, sl_price, df_risk, pdh
-                            )
-                            
-                            if target_price is None:
-                                logger.warning(f"❌ Trade REJECTED: {symbol} | Reason: {tp_reason}")
-                                continue
-                            
-                            logger.info(f"✅ Structure Risk Validated: {symbol}")
-                            logger.info(f"   SL: ₹{sl_price:.2f} | {sl_reason}")
-                            logger.info(f"   TP: ₹{target_price:.2f} | {tp_reason}")
-                        else:
-                            # Fallback to percentage-based (old system)
-                            sl_price = price * (1 - config_manager.get("risk", "stop_loss_pct"))
-                            target_price = price * (1 + config_manager.get("risk", "target_pct"))
-                            logger.info(f"Using percentage-based risk (fallback mode)")
-                        
-                        # === POSITION SIZING ===
-                        sizing_mode = config_manager.get("position_sizing", "mode") or "dynamic"
-                        dry_run = config_manager.get("general", "dry_run")
-                        
-                        if sizing_mode == "dynamic":
-                            # Dynamic position sizing based on account balance and SL
-                            balance = get_account_balance(smartApi, dry_run)
-                            risk_pct = config_manager.get("position_sizing", "risk_per_trade_pct") or 1.0
-                            max_pos_pct = config_manager.get("position_sizing", "max_position_size_pct") or 20.0
-                            min_sl_pct = config_manager.get("position_sizing", "min_sl_distance_pct") or 0.6
-                            
-                            quantity = calculate_position_size(
-                                price, sl_price, balance, risk_pct, max_pos_pct, min_sl_pct, symbol
-                            )
-                            
-                            # Safety check: Skip trade if qty is 0 (failed validation)
-                            if quantity <= 0:
-                                logger.warning(f"❌ Trade SKIPPED: {symbol} | Position sizing returned qty=0")
-                                continue
-                        else:
-                            # Fixed quantity mode (backwards compatible)
-                            quantity = config_manager.get("general", "quantity") or 1
-                            logger.info(f"📊 Fixed Quantity Mode: {quantity} shares")
-                        
-                        # Place the order
-                        orderId = place_buy_order(smartApi, symbol, token, quantity)
-                        
-                        # Verify Order Status
-                        if orderId:
-                            is_success, status, avg_price = verify_order_status(smartApi, orderId)
-                            
-                            if is_success:
-                                entry_price = avg_price if avg_price > 0 else price
+                            token = token_map.get(symbol)
+                            if token:
+                                use_structure = config_manager.get("structure_risk", "use_structure_based") or False
                                 
-                                with state_lock:
-                                    BOT_STATE["positions"][symbol] = {
-                                        "symbol": symbol,
-                                        "entry_price": entry_price,
-                                        "qty": quantity,
-                                        "status": "OPEN",
-                                        "entry_time": get_ist_now().strftime("%H:%M"),
-                                        "entry_time_ts": get_ist_now().timestamp(),
-                                        "sl": sl_price,
-                                        "target": target_price,
-                                        "original_sl": sl_price,
-                                        "highest_ltp": entry_price,
-                                        "is_breakeven_active": False,
-                                        "order_id": orderId
-                                    }
-                                    BOT_STATE["total_trades_today"] += 1
-                                    BOT_STATE["stock_trade_counts"][symbol] = current_stock_trades + 1 # Note: Might be stale? No, loop updates local var, but BOT_STATE is single source
-                                    # Update specific stock count
-                                    BOT_STATE["stock_trade_counts"][symbol] = BOT_STATE["stock_trade_counts"].get(symbol, 0) + 1
+                                if use_structure:
+                                    # STEP 1: Re-validate 15M Bias (The Golden Rule)
+                                    # Signals could be queued, market may have changed since scanner ran
+                                    df_15m_recheck = fetch_candle_data(smartApi, token, symbol, "FIFTEEN_MINUTE")
                                     
-                                save_state(BOT_STATE) 
-                                broadcast_state() 
-                                logger.info(f"✅ Trade Confirmed: {symbol} @ {entry_price}")
-                            else:
-                                logger.error(f"❌ Trade Rejected/Failed Validation: {symbol} Status: {status}")
-                        else:
-                            logger.error(f"❌ Failed to place order for {symbol}")
+                                    if df_15m_recheck is None or df_15m_recheck.empty:
+                                        logger.warning(f"❌ Skipping {symbol}: Unable to fetch 15M data for re-validation")
+                                        continue
+                                    
+                                    from indicators import check_15m_bias, calculate_indicators
+                                    df_15m_recheck = calculate_indicators(df_15m_recheck)
+                                    bias_15m, bias_reason = check_15m_bias(df_15m_recheck)
+                                    
+                                    if bias_15m != 'BULLISH':
+                                        logger.warning(f"❌ Trade REJECTED: {symbol} | 15M bias changed to {bias_15m} ({bias_reason})")
+                                        continue
+                                    
+                                    logger.info(f"✅ 15M Bias Confirmed: {symbol} | {bias_reason}")
+                                    
+                                    # STEP 2: Fetch 5-minute candles for structure analysis
+                                    df_risk = fetch_candle_data(smartApi, token, symbol, "FIVE_MINUTE")
+                                    
+                                    if df_risk is None or df_risk.empty:
+                                        logger.warning(f"❌ Skipping {symbol}: No data for risk calc")
+                                        continue # Don't take trade without risk calculation
+                                    
+                                    # Calculate indicators (VWAP, EMAs)
+                                    df_risk = calculate_indicators(df_risk)
+                                    
+                                    if len(df_risk) < 2:
+                                        logger.warning(f"❌ Skipping {symbol}: Insufficient candle data")
+                                        continue
+                                    
+                                    # Get latest VWAP and EMA20
+                                    latest_candle = df_risk.iloc[-1]
+                                    vwap = latest_candle.get('VWAP')
+                                    ema20 = latest_candle.get('EMA_20')
+                                    
+                                    if pd.isna(vwap) or pd.isna(ema20):
+                                        logger.warning(f"❌ Skipping {symbol}: Missing VWAP or EMA20")
+                                        continue
+                                    
+                                    # Calculate structure-based SL
+                                    sl_price, sl_reason, sl_distance = calculate_structure_based_sl(
+                                        df_risk, price, vwap, ema20
+                                    )
+                                    
+                                    if sl_price is None:
+                                        logger.warning(f"❌ Trade REJECTED: {symbol} | Reason: {sl_reason}")
+                                        continue
+                                    
+                                    # Get PDH from bot state (if available)
+                                    pdh = BOT_STATE.get("previous_day_high", {}).get(symbol)
+                                    
+                                    # Calculate structure-based TP
+                                    target_price, tp_reason, rr_ratio = calculate_structure_based_tp(
+                                        price, sl_price, df_risk, pdh
+                                    )
+                                    
+                                    if target_price is None:
+                                        logger.warning(f"❌ Trade REJECTED: {symbol} | Reason: {tp_reason}")
+                                        continue
+                                    
+                                    logger.info(f"✅ Structure Risk Validated: {symbol}")
+                                    logger.info(f"   SL: ₹{sl_price:.2f} | {sl_reason}")
+                                    logger.info(f"   TP: ₹{target_price:.2f} | {tp_reason}")
+                                else:
+                                    # Fallback to percentage-based (old system)
+                                    sl_price = price * (1 - config_manager.get("risk", "stop_loss_pct"))
+                                    target_price = price * (1 + config_manager.get("risk", "target_pct"))
+                                    logger.info(f"Using percentage-based risk (fallback mode)")
+                                
+                                # === POSITION SIZING ===
+                                sizing_mode = config_manager.get("position_sizing", "mode") or "dynamic"
+                                dry_run = config_manager.get("general", "dry_run")
+                                
+                                if sizing_mode == "dynamic":
+                                    # Dynamic position sizing based on account balance and SL
+                                    balance = get_account_balance(smartApi, dry_run)
+                                    risk_pct = config_manager.get("position_sizing", "risk_per_trade_pct") or 1.0
+                                    max_pos_pct = config_manager.get("position_sizing", "max_position_size_pct") or 20.0
+                                    min_sl_pct = config_manager.get("position_sizing", "min_sl_distance_pct") or 0.6
+                                    
+                                    quantity = calculate_position_size(
+                                        price, sl_price, balance, risk_pct, max_pos_pct, min_sl_pct, symbol
+                                    )
+                                    
+                                    # Safety check: Skip trade if qty is 0 (failed validation)
+                                    if quantity <= 0:
+                                        logger.warning(f"❌ Trade SKIPPED: {symbol} | Position sizing returned qty=0")
+                                        continue
+                                else:
+                                    # Fixed quantity mode (backwards compatible)
+                                    quantity = config_manager.get("general", "quantity") or 1
+                                    logger.info(f"📊 Fixed Quantity Mode: {quantity} shares")
+                                
+                                # Place the order
+                                orderId = place_buy_order(smartApi, symbol, token, quantity)
+                                
+                                # Verify Order Status
+                                if orderId:
+                                    is_success, status, avg_price = verify_order_status(smartApi, orderId)
+                                    
+                                    if is_success:
+                                        entry_price = avg_price if avg_price > 0 else price
+                                        
+                                        with state_lock:
+                                            BOT_STATE["positions"][symbol] = {
+                                                "symbol": symbol,
+                                                "entry_price": entry_price,
+                                                "qty": quantity,
+                                                "status": "OPEN",
+                                                "entry_time": get_ist_now().strftime("%H:%M"),
+                                                "entry_time_ts": get_ist_now().timestamp(),
+                                                "sl": sl_price,
+                                                "target": target_price,
+                                                "original_sl": sl_price,
+                                                "highest_ltp": entry_price,
+                                                "is_breakeven_active": False,
+                                                "order_id": orderId
+                                            }
+                                            BOT_STATE["total_trades_today"] += 1
+                                            BOT_STATE["stock_trade_counts"][symbol] = current_stock_trades + 1 # Note: Might be stale? No, loop updates local var, but BOT_STATE is single source
+                                            # Update specific stock count
+                                            BOT_STATE["stock_trade_counts"][symbol] = BOT_STATE["stock_trade_counts"].get(symbol, 0) + 1
+                                            
+                                        save_state(BOT_STATE) 
+                                        broadcast_state() 
+                                        logger.info(f"✅ Trade Confirmed: {symbol} @ {entry_price}")
+                                    else:
+                                        logger.error(f"❌ Trade Rejected/Failed Validation: {symbol} Status: {status}")
+                                else:
+                                    logger.error(f"❌ Failed to place order for {symbol}")
             # ---------------------------- 
             
             # BROADCAST END of Cycle
