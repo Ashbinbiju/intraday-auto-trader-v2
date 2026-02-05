@@ -87,6 +87,7 @@
     - [x] Create API Risk Analysis (`api_risk_analysis.md`)
 
 - [/] **Debugging & Verification** <!-- id: 72 -->
+    - [x] **Diagnose & Fix Bot Loop Crash** (Implemented global try-except & fixed timeouts)
     - [x] Investigate "Zero Signals" (Confirmed Rate Limit & Syntax Error)
     - [x] Enable Global Debug Logging (`async_scanner.py`)
     - [x] Implement Rate Limiting (3 req/s)
