@@ -21,7 +21,7 @@ def fetch_top_performing_sectors():
     Fetches sector performance data and returns the top performing sectors (positive change).
     """
     try:
-        response = requests.get(SECTOR_API_URL, headers=HEADERS)
+        response = requests.get(SECTOR_API_URL, headers=HEADERS, timeout=10)
         response.raise_for_status()
         data = response.json()
         
@@ -62,7 +62,7 @@ def fetch_stocks_in_sector(sector_key):
     """
     url = STOCK_API_URL_TEMPLATE.format(sector_key)
     try:
-        response = requests.get(url, headers=HEADERS)
+        response = requests.get(url, headers=HEADERS, timeout=10)
         response.raise_for_status()
         data = response.json()
         
@@ -95,7 +95,7 @@ def fetch_market_indices():
     """
     url = "https://intradayscreener.com/api/indices/indexData"
     try:
-        response = requests.get(url, headers=HEADERS)
+        response = requests.get(url, headers=HEADERS, timeout=10)
         response.raise_for_status()
         data = response.json()
         return data # Returns list of dicts directly
