@@ -760,24 +760,24 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                 # ... check stocks ...
                 stocks = fetch_stocks_in_sector(sector['key'])
                 for stock in stocks:
-            symbol = stock['symbol']
-            
-            # Dedup
-            if symbol in seen_symbols: continue
-            seen_symbols.add(symbol)
-            
-            # Skip if Position Open
-            if symbol in BOT_STATE["positions"] and BOT_STATE["positions"][symbol]["status"] == "OPEN":
-                continue
-                
-            # Skip if Stock limits hit
-            current_stock_trades = BOT_STATE["stock_trade_counts"].get(symbol, 0)
-            if current_stock_trades >= max_trades_stock:
-                continue
-            
-            # Prepare for Async Scan
-            stock['sector'] = sector['name']
-            stocks_to_scan.append(stock)
+                    symbol = stock['symbol']
+                    
+                    # Dedup
+                    if symbol in seen_symbols: continue
+                    seen_symbols.add(symbol)
+                    
+                    # Skip if Position Open
+                    if symbol in BOT_STATE["positions"] and BOT_STATE["positions"][symbol]["status"] == "OPEN":
+                        continue
+                        
+                    # Skip if Stock limits hit
+                    current_stock_trades = BOT_STATE["stock_trade_counts"].get(symbol, 0)
+                    if current_stock_trades >= max_trades_stock:
+                        continue
+                    
+                    # Prepare for Async Scan
+                    stock['sector'] = sector['name']
+                    stocks_to_scan.append(stock)
 
             if BOT_STATE["total_trades_today"] >= max_trades_day:
             time.sleep(60)
