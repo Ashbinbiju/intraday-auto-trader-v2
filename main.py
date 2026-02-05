@@ -734,126 +734,120 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                 time.sleep(60)
                 continue
 
-            # -- GLOBAL ERROR HANDLING START --
-            try:
-                # --- Fetch Market Indices (New) ---
-                indices = fetch_market_indices()
-                if indices:
-                    BOT_STATE["indices"] = indices
-                    broadcast_state() # Update UI with indices
-                # ----------------------------------
-                
-                # ... (Scanning) ...
-                sectors = fetch_top_performing_sectors()
-                if not sectors:
-                    logger.info("No sector data available. Skipping scan. 📉")
-                    pass
-                
-                target_sectors = sectors[:4] if sectors else []
-                BOT_STATE["top_sectors"] = target_sectors
+            # --- Fetch Market Indices (New) ---
+            indices = fetch_market_indices()
+            if indices:
+                BOT_STATE["indices"] = indices
+                broadcast_state() # Update UI with indices
+            # ----------------------------------
+            
+            # ... (Scanning) ...
+            sectors = fetch_top_performing_sectors()
+            if not sectors:
+                logger.info("No sector data available. Skipping scan. 📉")
+                pass
+            
+            target_sectors = sectors[:4] if sectors else []
+            BOT_STATE["top_sectors"] = target_sectors
 
-                stocks_to_scan = []
-                seen_symbols = set()
+            stocks_to_scan = []
+            seen_symbols = set()
+            
+            for sector in target_sectors:
+                # ... check stocks ...
+                stocks = fetch_stocks_in_sector(sector['key'])
+                for stock in stocks:
+                    symbol = stock['symbol']
+                    
+                    # Dedup
+                    if symbol in seen_symbols: continue
+                    seen_symbols.add(symbol)
+                    
+                    # Skip if Position Open
+                    if symbol in BOT_STATE["positions"] and BOT_STATE["positions"][symbol]["status"] == "OPEN":
+                        continue
+                        
+                    # Skip if Stock limits hit
+                    current_stock_trades = BOT_STATE["stock_trade_counts"].get(symbol, 0)
+                    if current_stock_trades >= max_trades_stock:
+                        continue
+                    
+                    # Prepare for Async Scan
+                    stock['sector'] = sector['name']
+                    stocks_to_scan.append(stock)
+
+            if BOT_STATE["total_trades_today"] >= max_trades_day:
+                time.sleep(60)
+                continue
+
+            # -- ASYNC BATCH SCAN --
+            if stocks_to_scan:
+                # Initialize Scanner with fresh SmartAPI Session Object
+                # Legacy: Pass token. New: Pass smartApi object for robustness.
+                scanner = AsyncScanner(smartApi.jwt_token, smartApi=smartApi)
                 
-                for sector in target_sectors:
-                    # ... check stocks ...
-                    stocks = fetch_stocks_in_sector(sector['key'])
-                    for stock in stocks:
-                        symbol = stock['symbol']
-                        
-                        # Dedup
-                        if symbol in seen_symbols: continue
-                        seen_symbols.add(symbol)
-                        
-                        # Skip if Position Open
-                        if symbol in BOT_STATE["positions"] and BOT_STATE["positions"][symbol]["status"] == "OPEN":
-                            continue
+                # Fetch Persistent Index Memory (High/Low Cache)
+                # This fixes the "Post-Market 0.0" data issue by remembering valid High/Low from earlier.
+                index_memory = BOT_STATE.setdefault("index_memory", {})
+                
+                # Run Async Scan (Blocking Call)
+                # Pass index_memory to allow Scanner to Use/Update it
+                signals = asyncio.run(scanner.scan(stocks_to_scan, token_map, index_memory))
+                
+                # Save Updated Memory (Logic in Scanner updates the dict in-place)
+                save_state(BOT_STATE) 
+                
+                # Process Signals Sequentially
+                for signal_data in signals:
+                    symbol = signal_data['symbol']
+                    message = signal_data['message']
+                    price = signal_data['price']
+                    
+                    # Check Daily Limit again (in case multiple signals triggered)
+                    if BOT_STATE["total_trades_today"] >= max_trades_day: 
+                        break
+
+                    # Record Signal
+                    if not any(s['symbol'] == symbol and s['time'] == signal_data['time'] for s in BOT_STATE['signals']):
+                        BOT_STATE['signals'].insert(0, signal_data)
+                        if len(BOT_STATE['signals']) > 50: BOT_STATE['signals'] = BOT_STATE['signals'][:50]
+                        broadcast_state()
+
+                    # --- AUTO BUY LOGIC (Structure-Based Risk) ---
+                    if message.startswith("Strong Buy"):
+                        current_trades = len([p for p in BOT_STATE["positions"].values() if p["status"] == "OPEN"])
+                        if current_trades < max_trades_day:
+                            logger.info(f"🚀 Evaluating BUY for {symbol} at {price}")
                             
-                        # Skip if Stock limits hit
-                        current_stock_trades = BOT_STATE["stock_trade_counts"].get(symbol, 0)
-                        if current_stock_trades >= max_trades_stock:
-                            continue
-                        
-                        # Prepare for Async Scan
-                        stock['sector'] = sector['name']
-                        stocks_to_scan.append(stock)
-
-                if BOT_STATE["total_trades_today"] >= max_trades_day:
-                    time.sleep(60)
-                    continue
-
-                # -- ASYNC BATCH SCAN --
-                if stocks_to_scan:
-                    # Initialize Scanner with fresh SmartAPI Session Object
-                    scanner = AsyncScanner(smartApi.jwt_token, smartApi=smartApi)
-                    
-                    # Fetch Persistent Index Memory (High/Low Cache)
-                    index_memory = BOT_STATE.setdefault("index_memory", {})
-                    
-                    # Run Async Scan (Blocking Call)
-                    signals = asyncio.run(scanner.scan(stocks_to_scan, token_map, index_memory))
-                    
-                    # Save Updated Memory
-                    save_state(BOT_STATE) 
-                    
-                    # Process Signals Sequentially
-                    for signal_data in signals:
-                        symbol = signal_data['symbol']
-                        message = signal_data['message']
-                        price = signal_data['price']
-                        
-                        # Check Daily Limit again
-                        if BOT_STATE["total_trades_today"] >= max_trades_day: 
-                            break
-
-                        # Record Signal
-                        if not any(s['symbol'] == symbol and s['time'] == signal_data['time'] for s in BOT_STATE['signals']):
-                            BOT_STATE['signals'].insert(0, signal_data)
-                            if len(BOT_STATE['signals']) > 50: BOT_STATE['signals'] = BOT_STATE['signals'][:50]
-                            broadcast_state()
-
-                        # --- AUTO BUY LOGIC (Structure-Based Risk) ---
-                        if message.startswith("Strong Buy"):
-                            current_trades = len([p for p in BOT_STATE["positions"].values() if p["status"] == "OPEN"])
-                            if current_trades < max_trades_day:
-                                logger.info(f"🚀 Evaluating BUY for {symbol} at {price}")
+                            token = token_map.get(symbol)
+                            if token:
+                                use_structure = config_manager.get("structure_risk", "use_structure_based") or False
                                 
-                                token = token_map.get(symbol)
-                                if token:
-                                    use_structure = config_manager.get("structure_risk", "use_structure_based") or False
+                                if use_structure:
+                                    # STEP 1: Re-validate 15M Bias (The Golden Rule)
+                                    # Signals could be queued, market may have changed since scanner ran
+                                    df_15m_recheck = fetch_candle_data(smartApi, token, symbol, "FIFTEEN_MINUTE")
                                     
-                                    if use_structure:
-                                        # STEP 1: Re-validate 15M Bias
-                                        df_15m_recheck = fetch_candle_data(smartApi, token, symbol, "FIFTEEN_MINUTE")
-                                        
-                                        if df_15m_recheck is None or df_15m_recheck.empty:
-                                            logger.warning(f"❌ Skipping {symbol}: Unable to fetch 15M data for re-validation")
-                                            continue
-                                        
-                                        from indicators import check_15m_bias, calculate_indicators
-                                        df_15m_recheck = calculate_indicators(df_15m_recheck)
-                                        bias_15m, bias_reason = check_15m_bias(df_15m_recheck)
-                                        
-                                        if bias_15m != 'BULLISH':
-                                            logger.warning(f"❌ Trade REJECTED: {symbol} | 15M bias changed to {bias_15m} ({bias_reason})")
-                                            continue
-                                        
-                                        logger.info(f"✅ 15M Bias Confirmed: {symbol} | {bias_reason}")
-                                        
-                                        # STEP 2: Fetch 5-minute candles
-                                        df_risk = fetch_candle_data(smartApi, token, symbol, "FIVE_MINUTE")
-                                        
-                                        if df_risk is None or df_risk.empty:
-                                            logger.warning(f"❌ Skipping {symbol}: No data for risk calc")
-                                            continue # Don't take trade without risk calculation
-
-            except Exception as e:
-                logger.error(f"❌ Critical Error in Bot Loop: {e}")
-                import traceback
-                logger.error(traceback.format_exc())
-                time.sleep(10) # Pause before retry loop
-                # The loop will continue, effectively restarting the cycle
+                                    if df_15m_recheck is None or df_15m_recheck.empty:
+                                        logger.warning(f"❌ Skipping {symbol}: Unable to fetch 15M data for re-validation")
+                                        continue
                                     
+                                    from indicators import check_15m_bias, calculate_indicators
+                                    df_15m_recheck = calculate_indicators(df_15m_recheck)
+                                    bias_15m, bias_reason = check_15m_bias(df_15m_recheck)
+                                    
+                                    if bias_15m != 'BULLISH':
+                                        logger.warning(f"❌ Trade REJECTED: {symbol} | 15M bias changed to {bias_15m} ({bias_reason})")
+                                        continue
+                                    
+                                    logger.info(f"✅ 15M Bias Confirmed: {symbol} | {bias_reason}")
+                                    
+                                    # STEP 2: Fetch 5-minute candles for structure analysis
+                                    df_risk = fetch_candle_data(smartApi, token, symbol, "FIVE_MINUTE")
+                                    
+                                    if df_risk is None or df_risk.empty:
+                                        logger.warning(f"❌ Skipping {symbol}: No data for risk calc")
+                                        continue # Don't take trade without risk calculation
                                     
                                     # Calculate indicators (VWAP, EMAs)
                                     df_risk = calculate_indicators(df_risk)
