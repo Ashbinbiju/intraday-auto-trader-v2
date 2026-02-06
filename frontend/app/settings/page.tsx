@@ -85,37 +85,38 @@ export default function SettingsPage() {
 
     return (
         <div className="max-w-4xl mx-auto space-y-8">
-            <div className="flex justify-between items-center">
-                <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-200 to-white">
+            <div className="flex justify-between items-center bg-black/40 p-4 rounded-2xl border border-white/5 backdrop-blur-sm sticky top-0 z-10">
+                <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-200 to-white pl-2">
                     Bot Configuration
                 </h1>
-                <button
-                    onClick={saveSettings}
-                    disabled={saving}
-                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 px-6 py-2 rounded-lg font-bold transition-all disabled:opacity-50"
-                >
-                    <Save size={18} /> {saving ? 'Saving...' : 'Save Configuration'}
-                </button>
-                <div className="mx-2"></div>
-                <button
-                    onClick={async () => {
-                        if (confirm("Are you sure you want to restart the backend server?")) {
-                            try {
-                                await axios.post(`${API_URL}/restart`);
-                                alert("Server restart triggered. Please wait 30s.");
-                            } catch (e) {
-                                alert("Failed to trigger restart.");
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={saveSettings}
+                        disabled={saving}
+                        className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 px-5 py-2 rounded-xl font-bold transition-all disabled:opacity-50 shadow-lg shadow-blue-900/20 active:scale-95"
+                    >
+                        <Save size={18} /> {saving ? 'Saving...' : 'Save Config'}
+                    </button>
+                    <button
+                        onClick={async () => {
+                            if (confirm("Are you sure you want to restart the backend server?")) {
+                                try {
+                                    await axios.post(`${API_URL}/restart`);
+                                    alert("Server restart triggered. Please wait 30s.");
+                                } catch (e) {
+                                    alert("Failed to trigger restart.");
+                                }
                             }
-                        }
-                    }}
-                    className="bg-red-600 hover:bg-red-500 px-4 py-2 rounded-lg font-bold text-sm"
-                >
-                    Restart Server
-                </button>
+                        }}
+                        className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 px-4 py-2 rounded-xl font-bold text-sm transition-all active:scale-95"
+                    >
+                        Restart Server
+                    </button>
+                </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Left Column: Risk & Credentials */}
+                {/* Left Column: Trading Logic (Risk & General) */}
                 <div className="space-y-6">
                     {/* Risk Rules */}
                     <div className="bg-white/5 border border-white/10 rounded-xl p-6">
@@ -127,7 +128,7 @@ export default function SettingsPage() {
                                     type="number" step="0.001"
                                     value={config.risk.stop_loss_pct}
                                     onChange={(e) => handleChange('risk', 'stop_loss_pct', e.target.value)}
-                                    className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none"
+                                    className="w-full bg-black/40 border border-white/10 rounded-lg p-3 focus:border-blue-500 outline-none transition-all"
                                 />
                             </div>
                             <div>
@@ -136,7 +137,7 @@ export default function SettingsPage() {
                                     type="number" step="0.001"
                                     value={config.risk.target_pct}
                                     onChange={(e) => handleChange('risk', 'target_pct', e.target.value)}
-                                    className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none"
+                                    className="w-full bg-black/40 border border-white/10 rounded-lg p-3 focus:border-blue-500 outline-none transition-all"
                                 />
                             </div>
                             <div>
@@ -145,12 +146,45 @@ export default function SettingsPage() {
                                     type="number" step="0.001"
                                     value={config.risk.trail_be_trigger}
                                     onChange={(e) => handleChange('risk', 'trail_be_trigger', e.target.value)}
-                                    className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none"
+                                    className="w-full bg-black/40 border border-white/10 rounded-lg p-3 focus:border-blue-500 outline-none transition-all"
                                 />
                             </div>
                         </div>
                     </div>
 
+                    {/* General Settings */}
+                    <div className="bg-white/5 border border-white/10 rounded-xl p-6">
+                        <h3 className="text-xl font-bold mb-4 text-blue-400 flex items-center gap-2">
+                            General Settings
+                        </h3>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs text-gray-500 mb-1">Quantity Per Trade</label>
+                                <input
+                                    type="number"
+                                    value={config.general.quantity}
+                                    onChange={(e) => handleChange('general', 'quantity', e.target.value)}
+                                    className="w-full bg-black/40 border border-white/10 rounded-lg p-3 focus:border-blue-500 outline-none transition-all"
+                                />
+                            </div>
+                            <div className="flex items-center justify-between p-4 bg-black/20 rounded-lg border border-dashed border-white/20">
+                                <div>
+                                    <div className="font-bold text-gray-300">Dry Run Mode</div>
+                                    <div className="text-xs text-gray-500">Paper Trading</div>
+                                </div>
+                                <button
+                                    onClick={() => handleChange('general', 'dry_run', !config.general.dry_run)}
+                                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border ${config.general.dry_run ? 'bg-green-500/20 text-green-400 border-green-500/50' : 'bg-gray-700/50 text-gray-400 border-gray-600'}`}
+                                >
+                                    {config.general.dry_run ? 'ACTIVE' : 'DISABLED'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Right Column: Constraints & Auth (Credentials & Limits) */}
+                <div className="space-y-6">
                     {/* API Credentials */}
                     <div className="bg-gradient-to-br from-cyan-500/10 to-blue-500/10 border border-cyan-500/30 rounded-xl p-6 shadow-lg shadow-cyan-900/20">
                         <h3 className="text-xl font-bold mb-4 text-cyan-400 flex items-center gap-2">
@@ -200,10 +234,7 @@ export default function SettingsPage() {
                             </div>
                         </div>
                     </div>
-                </div>
 
-                {/* Right Column: Limits & General */}
-                <div className="space-y-6">
                     {/* Trade Limits */}
                     <div className="bg-white/5 border border-white/10 rounded-xl p-6">
                         <h3 className="text-xl font-bold mb-4 text-orange-400">Trade Limits</h3>
@@ -214,7 +245,7 @@ export default function SettingsPage() {
                                     type="number"
                                     value={config.limits.max_trades_per_day}
                                     onChange={(e) => handleChange('limits', 'max_trades_per_day', e.target.value)}
-                                    className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none"
+                                    className="w-full bg-black/40 border border-white/10 rounded-lg p-3 focus:border-blue-500 outline-none transition-all"
                                 />
                             </div>
                             <div>
@@ -223,7 +254,7 @@ export default function SettingsPage() {
                                     type="number"
                                     value={config.limits.max_trades_per_stock}
                                     onChange={(e) => handleChange('limits', 'max_trades_per_stock', e.target.value)}
-                                    className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none"
+                                    className="w-full bg-black/40 border border-white/10 rounded-lg p-3 focus:border-blue-500 outline-none transition-all"
                                 />
                             </div>
                             <div className="grid grid-cols-2 gap-4">
@@ -233,7 +264,7 @@ export default function SettingsPage() {
                                         type="time"
                                         value={config.limits.trading_start_time || "09:30"}
                                         onChange={(e) => handleChange('limits', 'trading_start_time', e.target.value)}
-                                        className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none"
+                                        className="w-full bg-black/40 border border-white/10 rounded-lg p-3 focus:border-blue-500 outline-none transition-all"
                                     />
                                 </div>
                                 <div>
@@ -242,39 +273,9 @@ export default function SettingsPage() {
                                         type="time"
                                         value={config.limits.trading_end_time}
                                         onChange={(e) => handleChange('limits', 'trading_end_time', e.target.value)}
-                                        className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none"
+                                        className="w-full bg-black/40 border border-white/10 rounded-lg p-3 focus:border-blue-500 outline-none transition-all"
                                     />
                                 </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* General Settings */}
-                    <div className="bg-white/5 border border-white/10 rounded-xl p-6">
-                        <h3 className="text-xl font-bold mb-4 text-blue-400 flex items-center gap-2">
-                            General Settings
-                        </h3>
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-xs text-gray-500 mb-1">Quantity Per Trade</label>
-                                <input
-                                    type="number"
-                                    value={config.general.quantity}
-                                    onChange={(e) => handleChange('general', 'quantity', e.target.value)}
-                                    className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none transition-colors"
-                                />
-                            </div>
-                            <div className="flex items-center justify-between p-4 bg-black/20 rounded-lg border border-dashed border-white/20">
-                                <div>
-                                    <div className="font-bold text-gray-300">Dry Run Mode</div>
-                                    <div className="text-xs text-gray-500">Paper Trading</div>
-                                </div>
-                                <button
-                                    onClick={() => handleChange('general', 'dry_run', !config.general.dry_run)}
-                                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border ${config.general.dry_run ? 'bg-green-500/20 text-green-400 border-green-500/50' : 'bg-gray-700/50 text-gray-400 border-gray-600'}`}
-                                >
-                                    {config.general.dry_run ? 'ACTIVE' : 'DISABLED'}
-                                </button>
                             </div>
                         </div>
                     </div>

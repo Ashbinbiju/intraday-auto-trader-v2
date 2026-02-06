@@ -81,7 +81,7 @@ def load_dhan_instrument_map():
     url = "https://images.dhan.co/api-data/api-scrip-master.csv"
     try:
         logger.info("Downloading Dhan Scrip Master...")
-        df = pd.read_csv(url)
+        df = pd.read_csv(url, low_memory=False)
         
         # Filter: SEM_EXM_EXCH_ID = 'NSE', SEM_INSTRUMENT_NAME = 'EQUITY'
         # Headers: SEM_SMST_SECURITY_ID, SEM_TRADING_SYMBOL, SEM_EXM_EXCH_ID, SEM_INSTRUMENT_NAME
