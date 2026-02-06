@@ -25,7 +25,9 @@ class ConnectionManager:
             try:
                 await connection.send_json(message)
             except Exception as e:
-                logger.warning(f"Error sending to WS client: {e}")
+                # Common error when client disconnects (refresh/close tab)
+                # Suppress warning to avoid log spam
+                logger.debug(f"Client disconnected during broadcast: {e}")
                 to_remove.append(connection)
         
         for conn in to_remove:
