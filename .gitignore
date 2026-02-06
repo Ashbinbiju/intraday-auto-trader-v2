@@ -46,8 +46,12 @@ build/
 *.log
 /logs/
 
-# User Uploads
+# User Uploads and Temporary Files
 uploaded_image_*.png
+uploaded_media_*.png
+uploaded_media_*.jpg
+media__*.png
+*.resolved.*
 
 # SmartAPI / Bot State
 bot_state.json
