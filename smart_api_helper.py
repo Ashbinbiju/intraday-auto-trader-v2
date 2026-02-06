@@ -23,7 +23,7 @@ def handle_api_error(data, context="API Call"):
         "AB1001": "Invalid API Key.",
         "AB1002": "Invalid TOTP.",
         "AB1003": "Invalid Client ID.",
-        "AB1004": "Invalid Password.",
+        "AB1004": "Data Not Available / Rate Limit (Temporary)", # Updated from "Invalid Password"
         "AB2001": "Rate limit exceeded.",
         "AB2002": "Invalid request parameters.",
         "AB2003": "Internal server error.",
@@ -112,10 +112,13 @@ def fetch_candle_data(smartApi, token, symbol, interval="FIFTEEN_MINUTE", days=5
             
             # Identify Rate Limit Errors
             msg = str(data.get('message', '')).lower()
-            logger.error(f"❌ API Error for {symbol}: {msg} | Code: {data.get('errorcode')} | Full: {data}")
+            error_code = data.get('errorcode')
             
-            if "access rate" in msg or "access denied" in msg or (data.get('errorcode') == 'AB2001'):
-                logger.warning(f"⚠️ SmartAPI Rate Limit hit (Candles). Retrying in {delay}s... ({i+1}/{retries})")
+            # Treat AB1004 as retryable (often transient load error)
+            retryable_codes = ['AB2001', 'AB1004'] 
+            
+            if "access rate" in msg or "access denied" in msg or (error_code in retryable_codes):
+                logger.warning(f"⚠️ SmartAPI Rate Limit/Transient Error (Code: {error_code}). Retrying in {delay}s... ({i+1}/{retries})")
                 time.sleep(delay)
                 continue
 
