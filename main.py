@@ -27,9 +27,13 @@ class LogBufferHandler(logging.Handler):
             log_entry = self.format(record)
             # Append to global shared buffer
             if "BOT_STATE" in globals():
-                if len(BOT_STATE["logs"]) > 100:
-                    BOT_STATE["logs"].pop(0)
+                if "logs" not in BOT_STATE:
+                    BOT_STATE["logs"] = []
                 BOT_STATE["logs"].append(log_entry)
+                
+                # Keep only last 100 logs (Prevent Bloat)
+                if len(BOT_STATE["logs"]) > 100:
+                    BOT_STATE["logs"] = BOT_STATE["logs"][-100:]
         except Exception:
             self.handleError(record)
 
