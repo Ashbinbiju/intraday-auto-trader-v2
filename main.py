@@ -748,6 +748,9 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                     
                 # ... (Scanning) ...
                 sectors = fetch_top_performing_sectors()
+                if sectors:
+                     logger.info(f"DEBUG: Main Loop Scraped {len(sectors)} sectors. Top: {[s['name'] for s in sectors[:4]]}")
+
                 if not sectors:
                     logger.info("No sector data available. Skipping scan. 📉")
                     pass
