@@ -150,27 +150,55 @@ export default function SettingsPage() {
                 </div>
 
                 {/* API Credentials */}
-                <div className="bg-white/5 border border-white/10 rounded-xl p-6">
-                    <h3 className="text-xl font-bold mb-4 text-purple-400">API Credentials</h3>
-                    <div className="space-y-4">
-                        <div>
-                            <label className="block text-xs text-gray-500 mb-1">Dhan Client ID (e.g., 100...)</label>
-                            <input
-                                type="text"
-                                value={config.credentials?.dhan_client_id || ""}
-                                onChange={(e) => handleChange('credentials', 'dhan_client_id', e.target.value)}
-                                className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-purple-500 outline-none"
-                                placeholder="Enter Client ID"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-xs text-gray-500 mb-1">Dhan Access Token (JWT)</label>
-                            <textarea
-                                value={config.credentials?.dhan_access_token || ""}
-                                onChange={(e) => handleChange('credentials', 'dhan_access_token', e.target.value)}
-                                className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-purple-500 outline-none h-24 text-xs font-mono"
-                                placeholder="eyJ..."
-                            />
+                <div className="bg-gradient-to-br from-cyan-500/10 to-blue-500/10 border border-cyan-500/30 rounded-xl p-6 shadow-lg shadow-cyan-900/20">
+                    <h3 className="text-xl font-bold mb-4 text-cyan-400 flex items-center gap-2">
+                        🔐 API Credentials
+                    </h3>
+                    <div className="space-y-5">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div className="md:col-span-1">
+                                <label className="block text-xs font-semibold text-cyan-200/70 mb-2 uppercase tracking-wider">Client ID</label>
+                                <div className="relative group">
+                                    <input
+                                        type="text"
+                                        value={config.credentials?.dhan_client_id || ""}
+                                        onChange={(e) => handleChange('credentials', 'dhan_client_id', e.target.value)}
+                                        className="w-full bg-black/60 border border-white/10 rounded-lg p-3 pl-4 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/50 outline-none transition-all font-mono text-cyan-300"
+                                        placeholder="e.g. 100..."
+                                    />
+                                    <div className="absolute inset-0 rounded-lg bg-cyan-500/5 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity" />
+                                </div>
+                            </div>
+                            <div className="md:col-span-2">
+                                <div className="flex justify-between items-center mb-2">
+                                    <label className="block text-xs font-semibold text-cyan-200/70 uppercase tracking-wider">Access Token (JWT)</label>
+                                    <button
+                                        onClick={() => {
+                                            const el = document.getElementById('token-input');
+                                            if (el) {
+                                                (el as HTMLInputElement).type = (el as HTMLInputElement).type === 'password' ? 'text' : 'password';
+                                            }
+                                        }}
+                                        className="text-[10px] bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 px-2 py-1 rounded transition-colors"
+                                    >
+                                        Show/Hide
+                                    </button>
+                                </div>
+                                <div className="relative group">
+                                    <input
+                                        id="token-input"
+                                        type="password"
+                                        value={config.credentials?.dhan_access_token || ""}
+                                        onChange={(e) => handleChange('credentials', 'dhan_access_token', e.target.value)}
+                                        className="w-full bg-black/60 border border-white/10 rounded-lg p-3 pl-4 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/50 outline-none transition-all font-mono text-cyan-300 text-xs truncate"
+                                        placeholder="eyJ..."
+                                    />
+                                    <div className="absolute inset-0 rounded-lg bg-cyan-500/5 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity" />
+                                </div>
+                                <p className="text-[10px] text-gray-500 mt-1 pl-1">
+                                    * Token expires every 24h. Update here to keep the bot running.
+                                </p>
+                            </div>
                         </div>
                     </div>
                 </div>
