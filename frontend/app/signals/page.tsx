@@ -5,6 +5,7 @@ import { ArrowRight, AlertCircle, CheckCircle, ChevronLeft, ChevronRight } from 
 
 import { getBaseUrl } from '@/lib/api';
 import { useWebSocket } from '@/hooks/useWebSocket';
+import { Signal } from '@/types';
 
 export default function SignalsPage() {
     const [loading, setLoading] = useState(true);
@@ -12,7 +13,7 @@ export default function SignalsPage() {
     const signalsPerPage = 20;
 
     const { data: wsData, isConnected } = useWebSocket();
-    const [signals, setSignals] = useState([]);
+    const [signals, setSignals] = useState<Signal[]>([]);
 
     const [audio] = useState(typeof Audio !== "undefined" ? new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3') : null);
 
@@ -21,7 +22,7 @@ export default function SignalsPage() {
             // Check if new signal arrived (simple length check)
             if (wsData.signals.length > signals.length && signals.length > 0) {
                 // Play Sound
-                audio?.play().catch(e => console.log("Audio play failed (interaction needed first)", e));
+                audio?.play().catch(() => console.log("Audio play failed (interaction needed first)"));
 
                 // Show Browser Notification (if supported)
                 if ("Notification" in window && Notification.permission === "granted") {
@@ -80,7 +81,7 @@ export default function SignalsPage() {
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-white/10">
-                        {currentSignals.map((signal: any, i) => (
+                        {currentSignals.map((signal, i) => (
                             <tr key={i} className="hover:bg-white/5 transition-colors">
                                 <td className="px-6 py-4 text-gray-400 font-mono">{signal.time.split(' ')[1]}</td>
                                 <td className="px-6 py-4 font-bold text-white">{signal.symbol}</td>

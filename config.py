@@ -28,6 +28,11 @@ DEFAULT_CONFIG = {
         "max_position_size_pct": 20.0,
         "min_sl_distance_pct": 0.6,
         "paper_trading_balance": 100000
+    },
+    "credentials": {
+        "dhan_client_id": "",
+        "dhan_access_token": "",
+        "smart_api_api_key": ""
     }
 }
 

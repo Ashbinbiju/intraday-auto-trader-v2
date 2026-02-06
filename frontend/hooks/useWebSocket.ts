@@ -2,8 +2,10 @@ import { useState, useEffect, useRef } from 'react';
 import { getWsUrl, getBaseUrl } from '@/lib/api';
 import axios from 'axios';
 
+import { MarketData } from '@/types';
+
 export function useWebSocket() {
-    const [data, setData] = useState<any>(null);
+    const [data, setData] = useState<MarketData | null>(null);
     const [isConnected, setIsConnected] = useState(false);
     const ws = useRef<WebSocket | null>(null);
 

@@ -5,7 +5,7 @@ import asyncio
 import pandas as pd
 import threading # Added for log_trade_to_db
 from scraper import fetch_top_performing_sectors, fetch_stocks_in_sector, fetch_market_indices
-from smart_api_helper import get_smartapi_session, fetch_candle_data, load_instrument_map, fetch_net_positions, verify_order_status
+from dhan_api_helper import get_dhan_session, load_dhan_instrument_map, fetch_candle_data, fetch_ltp, fetch_net_positions, place_order_api, fetch_holdings
 from indicators import calculate_indicators, check_buy_condition
 from utils import is_market_open, get_ist_now
 from config import config_manager
@@ -22,9 +22,9 @@ def ist_converter(*args):
     return ist_dt.timetuple()
 
 class LogBufferHandler(logging.Handler):
-    def emit(self, record):
+    def emit(self_instance, record):
         try:
-            log_entry = self.format(record)
+            log_entry = self_instance.format(record)
             # Append to global shared buffer
             if "BOT_STATE" in globals():
                 if "logs" not in BOT_STATE:
@@ -35,7 +35,7 @@ class LogBufferHandler(logging.Handler):
                 if len(BOT_STATE["logs"]) > 100:
                     BOT_STATE["logs"] = BOT_STATE["logs"][-100:]
         except Exception:
-            self.handleError(record)
+            self_instance.handleError(record)
 
 root_logger = logging.getLogger()
 root_logger.setLevel(logging.INFO)
@@ -638,19 +638,20 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                 logger.error(f"WS Broadcast Failed: {e}")
 
     # ... (SmartAPI Init) ...
-    # 1. Initialize SmartAPI
-    smartApi = get_smartapi_session()
-    if not smartApi:
-        logger.critical("Failed to connect to SmartAPI. Exiting.")
+    # 1. Initialize Dhan API
+    dhan = get_dhan_session()
+    if not dhan:
+        logger.critical("Failed to connect to Dhan API. Exiting.")
         BOT_STATE["is_running"] = False
         return
     
-    SMART_API_SESSION = smartApi 
+    SMART_API_SESSION = dhan # Keeping variable name for compatibility with rest of code logic (for now)
+    smartApi = dhan 
 
-    # 2. Load Instrument Map
-    token_map = load_instrument_map()
+    # 2. Load Dhan Instrument Map
+    token_map = load_dhan_instrument_map()
     if not token_map:
-        logger.critical("Failed to load Token Map. Exiting.")
+        logger.critical("Failed to load Dhan Token Map. Exiting.")
         BOT_STATE["is_running"] = False
         return
         
@@ -684,7 +685,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                      success = reconcile_state(SMART_API_SESSION)
                      if not success:
                          logger.warning("Reconciliation Failed. Attempting to Re-Authenticate...")
-                         new_session = get_smartapi_session()
+                         new_session = get_dhan_session()
                          if new_session:
                              SMART_API_SESSION = new_session
                              smartApi = new_session # Update local reference
@@ -796,7 +797,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                 if stocks_to_scan:
                     # Initialize Scanner with fresh SmartAPI Session Object
                     # Legacy: Pass token. New: Pass smartApi object for robustness.
-                    scanner = AsyncScanner(smartApi.jwt_token, smartApi=smartApi)
+                    scanner = AsyncScanner("UNUSED_TOKEN", smartApi=smartApi)
                     
                     # Fetch Persistent Index Memory (High/Low Cache)
                     # This fixes the "Post-Market 0.0" data issue by remembering valid High/Low from earlier.

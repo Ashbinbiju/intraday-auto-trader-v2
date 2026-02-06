@@ -5,7 +5,7 @@ import pandas as pd
 from datetime import datetime
 from indicators import calculate_indicators, check_buy_condition
 from utils import get_ist_now
-from smart_api_helper import API_KEY, CLIENT_CODE, fetch_candle_data
+from dhan_api_helper import fetch_candle_data, fetch_ltp
 
 logger = logging.getLogger("AsyncScanner")
 # Ensure logging output matches MainBot
@@ -19,28 +19,17 @@ if not logger.handlers:
 class AsyncScanner:
     def __init__(self, jwt_token, smartApi=None, concurrency=50, timeout=3):
         self.jwt_token = jwt_token
-        self.smartApi = smartApi # Store SmartAPI Object
-        self.api_key = API_KEY
-        self.client_code = CLIENT_CODE
-        self.concurrency = concurrency # Store for late init
-        # self.sem is initialized in scan() to perform on the correct loop
+        self.smartApi = smartApi # Store Dhan Object
+        # self.api_key = API_KEY # Obsolete
+        # self.client_code = CLIENT_CODE # Obsolete
+        self.concurrency = concurrency 
         self.sem = None 
         self.timeout = aiohttp.ClientTimeout(total=timeout)
-        self.base_url = "https://apiconnect.angelbroking.com"
-        self.endpoint = "/rest/secure/angelbroking/historical/v1/getCandleData"
+        self.base_url = "https://api.dhan.co" # Updated
+        self.endpoint = "" # Not used with SDK
         
-        # Headers matching SmartAPI SDK
-        self.headers = {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'X-UserType': 'USER',
-            'X-SourceID': 'WEB',
-            'X-ClientLocalIP': '127.0.0.1', 
-            'X-ClientPublicIP': '127.0.0.1', 
-            'X-MACAddress': 'MAC_ADDRESS',
-            'X-PrivateKey': self.api_key,
-            'Authorization': f'Bearer {self.jwt_token}'
-        }
+        # Headers not needed for SDK wrapper, but kept empty for safety if logic checks it
+        self.headers = {}
 
     async def fetch_candle_data(self, session, symbol, token):
         """
@@ -278,7 +267,7 @@ class AsyncScanner:
                                 # FIX: Fetch LIVE price from Angel One instead of using stale scraper price
                                 live_ltp = 0.0
                                 try:
-                                    from smart_api_helper import fetch_ltp
+                                    from dhan_api_helper import fetch_ltp
                                     # Fix: Re-fetch token for the CURRENT symbol!
                                     current_token = token_map.get(symbol)
                                     if current_token:

@@ -17,11 +17,16 @@
         "dry_run": true
     },
     "position_sizing": {
-        "mode": "fixed",
+        "mode": "dynamic",
         "risk_per_trade_pct": 1.0,
         "max_position_size_pct": 20.0,
         "min_sl_distance_pct": 0.6,
         "paper_trading_balance": 100000.0
+    },
+    "credentials": {
+        "dhan_client_id": "7560952935",
+        "dhan_access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzcwNDU3MDgwLCJpYXQiOjE3NzAzNzA2ODAsInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTA3NzkzNTI5In0.rJ_lg7iN0uSVqMb5y4Mm1UamgyiMiIvHtezjBC2z0gZAOjn9o5-pZYREsX5sdTBWIniouUNEXBhHC2Xe05B-9g",
+        "smart_api_api_key": "ruseeaBq"
     },
     "structure_risk": {
         "sl_buffer_pct": 0.002,

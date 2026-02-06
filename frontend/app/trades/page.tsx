@@ -5,16 +5,24 @@ import { Shield, Target, TrendingUp, XCircle, AlertTriangle, Wifi, WifiOff, Chec
 import { useWebSocket } from '@/hooks/useWebSocket';
 
 import { getBaseUrl } from '@/lib/api';
+import { MarketData, Position } from '@/types';
+
+interface CardProps {
+    symbol: string;
+    pos: Position;
+    handleManualExit: (symbol: string) => void;
+    processing: string | null;
+}
 
 export default function TradesPage() {
     const { data: wsData, isConnected } = useWebSocket();
-    const [localData, setLocalData] = useState<any>(null);
+    const [localData, setLocalData] = useState<MarketData | null>(null);
     const [processing, setProcessing] = useState<string | null>(null);
 
     // Sync WS data to local state
     useEffect(() => {
         if (wsData) {
-            setLocalData(wsData);
+            setLocalData(wsData as MarketData);
         }
     }, [wsData]);
 
@@ -26,7 +34,7 @@ export default function TradesPage() {
             await axios.post(`${baseUrl}/trade/close/${symbol}`);
             alert(`Exit Order Placed for ${symbol}`);
             // No need to fetch, WS will update
-        } catch (err) {
+        } catch (_) {
             alert(`Failed to exit ${symbol}`);
         } finally {
             setProcessing(null);
@@ -41,7 +49,7 @@ export default function TradesPage() {
             const baseUrl = getBaseUrl();
             await axios.post(`${baseUrl}/toggle`);
             // WS update will reflect change
-        } catch (err) {
+        } catch (_) {
             alert("Failed to toggle Kill Switch");
         }
     };
@@ -49,9 +57,9 @@ export default function TradesPage() {
     if (!localData && !isConnected) return <div className="p-10 text-center text-gray-400 animate-pulse">Connecting to Live Feed...</div>;
 
     // Fallback if connected but no data yet (rare)
-    const displayData = localData || {};
+    const displayData = localData || { is_trading_allowed: false, positions: {} };
 
-    const positions = displayData?.positions ? Object.entries(displayData.positions).filter(([_, p]: any) => p.status === "OPEN") : [];
+    const positions = displayData.positions ? Object.entries(displayData.positions).filter(([, p]) => p.status === "OPEN") : [];
 
     return (
         <div className="space-y-8">
@@ -67,12 +75,12 @@ export default function TradesPage() {
 
                 <button
                     onClick={toggleKillSwitch}
-                    className={`w-full md:w-auto flex items-center justify-center gap-3 px-6 py-3 rounded-xl font-bold border transition-all ${displayData?.is_trading_allowed
+                    className={`w-full md:w-auto flex items-center justify-center gap-3 px-6 py-3 rounded-xl font-bold border transition-all ${displayData.is_trading_allowed
                         ? 'bg-red-500/10 border-red-500 text-red-500 hover:bg-red-500 hover:text-white'
                         : 'bg-green-500/10 border-green-500 text-green-500 hover:bg-green-500 hover:text-white'
                         }`}
                 >
-                    {displayData?.is_trading_allowed ? (
+                    {displayData.is_trading_allowed ? (
                         <><XCircle size={24} /> STOP TRADING (KILL SWITCH)</>
                     ) : (
                         <><CheckCircle size={24} /> RESUME TRADING</>
@@ -80,7 +88,7 @@ export default function TradesPage() {
                 </button>
             </div>
 
-            {!displayData?.is_trading_allowed && (
+            {!displayData.is_trading_allowed && (
                 <div className="bg-yellow-500/10 border border-yellow-500 text-yellow-400 p-4 rounded-xl flex items-center justify-center gap-2 text-center">
                     <AlertTriangle />
                     <span>
@@ -92,7 +100,7 @@ export default function TradesPage() {
 
             {/* Active Positions Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {positions.map(([symbol, pos]: any) => {
+                {positions.map(([symbol, pos]) => {
                     return (
                         <Card key={symbol} symbol={symbol} pos={pos} handleManualExit={handleManualExit} processing={processing} />
                     );
@@ -110,7 +118,7 @@ export default function TradesPage() {
 }
 
 // Sub-components to keep code clean and fix the TimeCounter scope issue
-function Card({ symbol, pos, handleManualExit, processing }: any) {
+function Card({ symbol, pos, handleManualExit, processing }: CardProps) {
     const entry = pos.entry_price || 0;
     const sl = pos.sl || 0;
     const tp = pos.target || 0;
