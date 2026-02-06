@@ -115,48 +115,97 @@ export default function SettingsPage() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Risk Rules */}
-                <div className="bg-white/5 border border-white/10 rounded-xl p-6">
-                    <h3 className="text-xl font-bold mb-4 text-red-400">Risk Management</h3>
-                    <div className="space-y-4">
-                        <div>
-                            <label className="block text-xs text-gray-500 mb-1">Stop Loss % (0.01 = 1%)</label>
-                            <input
-                                type="number" step="0.001"
-                                value={config.risk.stop_loss_pct}
-                                onChange={(e) => handleChange('risk', 'stop_loss_pct', e.target.value)}
-                                className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none"
-                            />
+                {/* Left Column: Trading Logic */}
+                <div className="space-y-6">
+                    {/* Risk Rules */}
+                    <div className="bg-white/5 border border-white/10 rounded-xl p-6">
+                        <h3 className="text-xl font-bold mb-4 text-red-400">Risk Management</h3>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs text-gray-500 mb-1">Stop Loss % (0.01 = 1%)</label>
+                                <input
+                                    type="number" step="0.001"
+                                    value={config.risk.stop_loss_pct}
+                                    onChange={(e) => handleChange('risk', 'stop_loss_pct', e.target.value)}
+                                    className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs text-gray-500 mb-1">Target % (0.02 = 2%)</label>
+                                <input
+                                    type="number" step="0.001"
+                                    value={config.risk.target_pct}
+                                    onChange={(e) => handleChange('risk', 'target_pct', e.target.value)}
+                                    className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs text-gray-500 mb-1">Trailing Activation %</label>
+                                <input
+                                    type="number" step="0.001"
+                                    value={config.risk.trail_be_trigger}
+                                    onChange={(e) => handleChange('risk', 'trail_be_trigger', e.target.value)}
+                                    className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none"
+                                />
+                            </div>
                         </div>
-                        <div>
-                            <label className="block text-xs text-gray-500 mb-1">Target % (0.02 = 2%)</label>
-                            <input
-                                type="number" step="0.001"
-                                value={config.risk.target_pct}
-                                onChange={(e) => handleChange('risk', 'target_pct', e.target.value)}
-                                className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-xs text-gray-500 mb-1">Trailing Activation %</label>
-                            <input
-                                type="number" step="0.001"
-                                value={config.risk.trail_be_trigger}
-                                onChange={(e) => handleChange('risk', 'trail_be_trigger', e.target.value)}
-                                className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none"
-                            />
+                    </div>
+
+                    {/* Trade Limits */}
+                    <div className="bg-white/5 border border-white/10 rounded-xl p-6">
+                        <h3 className="text-xl font-bold mb-4 text-orange-400">Trade Limits</h3>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs text-gray-500 mb-1">Max Trades Per Day</label>
+                                <input
+                                    type="number"
+                                    value={config.limits.max_trades_per_day}
+                                    onChange={(e) => handleChange('limits', 'max_trades_per_day', e.target.value)}
+                                    className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs text-gray-500 mb-1">Max Trades Per Stock</label>
+                                <input
+                                    type="number"
+                                    value={config.limits.max_trades_per_stock}
+                                    onChange={(e) => handleChange('limits', 'max_trades_per_stock', e.target.value)}
+                                    className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none"
+                                />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs text-gray-500 mb-1">Start Time</label>
+                                    <input
+                                        type="time"
+                                        value={config.limits.trading_start_time || "09:30"}
+                                        onChange={(e) => handleChange('limits', 'trading_start_time', e.target.value)}
+                                        className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs text-gray-500 mb-1">End Time</label>
+                                    <input
+                                        type="time"
+                                        value={config.limits.trading_end_time}
+                                        onChange={(e) => handleChange('limits', 'trading_end_time', e.target.value)}
+                                        className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none"
+                                    />
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                {/* API Credentials */}
-                <div className="bg-gradient-to-br from-cyan-500/10 to-blue-500/10 border border-cyan-500/30 rounded-xl p-6 shadow-lg shadow-cyan-900/20">
-                    <h3 className="text-xl font-bold mb-4 text-cyan-400 flex items-center gap-2">
-                        🔐 API Credentials
-                    </h3>
-                    <div className="space-y-5">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            <div className="md:col-span-1">
+                {/* Right Column: Config & Creds */}
+                <div className="space-y-6">
+                    {/* API Credentials */}
+                    <div className="bg-gradient-to-br from-cyan-500/10 to-blue-500/10 border border-cyan-500/30 rounded-xl p-6 shadow-lg shadow-cyan-900/20">
+                        <h3 className="text-xl font-bold mb-4 text-cyan-400 flex items-center gap-2">
+                            🔐 API Credentials
+                        </h3>
+                        <div className="space-y-5">
+                            <div>
                                 <label className="block text-xs font-semibold text-cyan-200/70 mb-2 uppercase tracking-wider">Client ID</label>
                                 <div className="relative group">
                                     <input
@@ -166,10 +215,9 @@ export default function SettingsPage() {
                                         className="w-full bg-black/60 border border-white/10 rounded-lg p-3 pl-4 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/50 outline-none transition-all font-mono text-cyan-300"
                                         placeholder="e.g. 100..."
                                     />
-                                    <div className="absolute inset-0 rounded-lg bg-cyan-500/5 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity" />
                                 </div>
                             </div>
-                            <div className="md:col-span-2">
+                            <div>
                                 <div className="flex justify-between items-center mb-2">
                                     <label className="block text-xs font-semibold text-cyan-200/70 uppercase tracking-wider">Access Token (JWT)</label>
                                     <button
@@ -193,61 +241,47 @@ export default function SettingsPage() {
                                         className="w-full bg-black/60 border border-white/10 rounded-lg p-3 pl-4 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/50 outline-none transition-all font-mono text-cyan-300 text-xs truncate"
                                         placeholder="eyJ..."
                                     />
-                                    <div className="absolute inset-0 rounded-lg bg-cyan-500/5 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity" />
+                                    <p className="text-[10px] text-gray-400 mt-2">
+                                        * Expires every 24h. Updates apply immediately.
+                                    </p>
                                 </div>
-                                <p className="text-[10px] text-gray-500 mt-1 pl-1">
-                                    * Token expires every 24h. Update here to keep the bot running.
-                                </p>
                             </div>
                         </div>
                     </div>
-                </div>
 
-                {/* Trade Limits */}
-                <div className="bg-white/5 border border-white/10 rounded-xl p-6">
-                    <h3 className="text-xl font-bold mb-4 text-orange-400">Trade Limits</h3>
-                    <div className="space-y-4">
-                        <div>
-                            <label className="block text-xs text-gray-500 mb-1">Max Trades Per Day</label>
-                            <input
-                                type="number"
-                                value={config.limits.max_trades_per_day}
-                                onChange={(e) => handleChange('limits', 'max_trades_per_day', e.target.value)}
-                                className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-xs text-gray-500 mb-1">Max Trades Per Stock</label>
-                            <input
-                                type="number"
-                                value={config.limits.max_trades_per_stock}
-                                onChange={(e) => handleChange('limits', 'max_trades_per_stock', e.target.value)}
-                                className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-xs text-gray-500 mb-1">Trading Start Time (HH:MM)</label>
-                            <input
-                                type="time"
-                                value={config.limits.trading_start_time || "09:30"}
-                                onChange={(e) => handleChange('limits', 'trading_start_time', e.target.value)}
-                                className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-xs text-gray-500 mb-1">Trading End Time (HH:MM)</label>
-                            <input
-                                type="time"
-                                value={config.limits.trading_end_time}
-                                onChange={(e) => handleChange('limits', 'trading_end_time', e.target.value)}
-                                className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none"
-                            />
+                    {/* General Settings */}
+                    <div className="bg-white/5 border border-white/10 rounded-xl p-6">
+                        <h3 className="text-xl font-bold mb-4 text-blue-400 flex items-center gap-2">
+                            General Settings
+                        </h3>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs text-gray-500 mb-1">Quantity Per Trade</label>
+                                <input
+                                    type="number"
+                                    value={config.general.quantity}
+                                    onChange={(e) => handleChange('general', 'quantity', e.target.value)}
+                                    className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none transition-colors"
+                                />
+                            </div>
+                            <div className="flex items-center justify-between p-4 bg-black/20 rounded-lg border border-dashed border-white/20">
+                                <div>
+                                    <div className="font-bold text-gray-300">Dry Run Mode</div>
+                                    <div className="text-xs text-gray-500">Paper Trading</div>
+                                </div>
+                                <button
+                                    onClick={() => handleChange('general', 'dry_run', !config.general.dry_run)}
+                                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border ${config.general.dry_run ? 'bg-green-500/20 text-green-400 border-green-500/50' : 'bg-gray-700/50 text-gray-400 border-gray-600'}`}
+                                >
+                                    {config.general.dry_run ? 'ACTIVE' : 'DISABLED'}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            {/* Position Sizing - NEW FEATURE */}
+            {/* Position Sizing - Full Width */}
             <div className="bg-gradient-to-br from-green-500/10 to-blue-500/10 border border-green-500/30 rounded-xl p-6">
                 <h3 className="text-xl font-bold mb-4 text-green-400 flex items-center gap-2">
                     💰 Position Sizing
@@ -363,38 +397,6 @@ export default function SettingsPage() {
                 )}
             </div>
 
-            {/* General */}
-            <div className="bg-white/5 border border-white/10 rounded-xl p-6 md:col-span-2">
-                <h3 className="text-xl font-bold mb-4 text-blue-400 flex items-center gap-2">
-                    General Settings
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <label className="block text-xs text-gray-500 mb-1">Quantity Per Trade</label>
-                        <input
-                            type="number"
-                            value={config.general.quantity}
-                            onChange={(e) => handleChange('general', 'quantity', e.target.value)}
-                            className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none transition-colors"
-                        />
-                    </div>
-                    <div className="flex items-center justify-between p-4 bg-black/20 rounded-lg border border-dashed border-white/20">
-                        <div>
-                            <div className="font-bold text-gray-300">Dry Run Mode</div>
-                            <div className="text-xs text-gray-500">Paper Trading (Simulated Orders)</div>
-                        </div>
-                        <button
-                            onClick={() => handleChange('general', 'dry_run', !config.general.dry_run)}
-                            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border ${config.general.dry_run ? 'bg-green-500/20 text-green-400 border-green-500/50' : 'bg-gray-700/50 text-gray-400 border-gray-600'}`}
-                        >
-                            {config.general.dry_run ? 'ACTIVE' : 'DISABLED'}
-                        </button>
-                    </div>
-                </div>
-                <p className="text-xs text-gray-600 mt-4 text-center">
-                    * Changes to Risk and Limits apply immediately to the next trade. Restart not required.
-                </p>
-            </div>
         </div>
     );
 }
