@@ -7,8 +7,8 @@
     "limits": {
         "max_trades_per_day": 2,
         "max_trades_per_stock": 3,
-        "trading_start_time": "09:20",
-        "trading_end_time": "11:00",
+        "trading_start_time": "09:30",
+        "trading_end_time": "15:15",
         "square_off_time": "15:15"
     },
     "general": {
@@ -24,7 +24,7 @@
         "paper_trading_balance": 100000.0
     },
     "credentials": {
-        "dhan_client_id": "7560952935",
+        "dhan_client_id": "1107793529",
         "dhan_access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzcwNDU3MDgwLCJpYXQiOjE3NzAzNzA2ODAsInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTA3NzkzNTI5In0.rJ_lg7iN0uSVqMb5y4Mm1UamgyiMiIvHtezjBC2z0gZAOjn9o5-pZYREsX5sdTBWIniouUNEXBhHC2Xe05B-9g",
         "smart_api_api_key": "ruseeaBq"
     },
