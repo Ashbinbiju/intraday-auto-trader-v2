@@ -26,7 +26,8 @@ def load_state():
         "indices": [],
         "top_sectors": [],
         "total_trades_today": 0,
-        "stock_trade_counts": {}
+        "stock_trade_counts": {},
+        "last_reset_date": "" # Track the last reset date
     }
     
     # Try loading from Supabase first
@@ -89,65 +90,56 @@ def start_auto_save(state, interval=60):
 
 def check_and_reset_daily_signals(state):
     """
-    Clears signals and yesterday's closed positions if it's a new trading day.
-    Checks the timestamp of the last signal and compares with current date.
+    Clears signals, trade counts, and yesterday's closed positions if it's a new trading day.
+    Uses 'last_reset_date' to track when the last reset occurred.
     """
     from datetime import datetime
     import logging
     logger = logging.getLogger(__name__)
     
     with state_lock:
-        current_date = datetime.now().date()
+        current_date_str = datetime.now().strftime("%Y-%m-%d")
+        last_reset = state.get("last_reset_date", "")
         
-        # 1. Clear old signals
-        signals = state.get("signals", [])
+        # Check if reset is needed (last_reset is empty OR last_reset is before today)
+        needs_reset = False
+        if not last_reset:
+            needs_reset = True
+        else:
+            if current_date_str > last_reset:
+                needs_reset = True
         
-        if signals:
-            last_signal = signals[-1]
-            last_signal_time = last_signal.get("time", "")
+        if needs_reset:
+            logger.info(f"🔄 Daily Reset Triggered! (Current: {current_date_str}, Last: {last_reset})")
             
-            if last_signal_time:
-                try:
-                    # Parse the signal timestamp (format: "YYYY-MM-DD HH:MM:SS")
-                    last_signal_date = datetime.strptime(last_signal_time, "%Y-%m-%d %H:%M:%S").date()
-                    
-                    # If it's a new day, clear signals
-                    if current_date > last_signal_date:
-                        logger.info(f"🗑️ New trading day detected. Clearing {len(signals)} old signals from {last_signal_date}")
-                        state["signals"] = []
-                except Exception as e:
-                    logger.error(f"Error checking signal date: {e}")
-        
-        # 2. Clear yesterday's closed positions
-        positions = state.get("positions", {})
-        positions_to_remove = []
-        
-        for symbol, pos in positions.items():
-            if pos.get("status") == "CLOSED":
-                entry_time_str = pos.get("entry_time", "")
-                if entry_time_str:
-                    try:
-                        # Try to parse full datetime format first
-                        if " " in entry_time_str and "-" in entry_time_str:
-                            # Format: "YYYY-MM-DD HH:MM:SS"
-                            entry_date = datetime.strptime(entry_time_str, "%Y-%m-%d %H:%M:%S").date()
-                            
-                            # If trade is from a previous day, mark for removal
-                            if entry_date < current_date:
-                                positions_to_remove.append(symbol)
-                        else:
-                            # Format: "HH:MM" or "HH:MM:SS" (time only, no date)
-                            # Assume it's from today if it's time-only format
-                            # We can't determine the date, so skip this position
-                            logger.debug(f"Skipping {symbol}: entry_time has no date ({entry_time_str})")
-                    except Exception as e:
-                        logger.debug(f"Could not parse entry_time for {symbol}: {e}")
-        
-        # Remove old closed positions
-        if positions_to_remove:
-            logger.info(f"🗑️ Clearing {len(positions_to_remove)} closed positions from previous days")
-            for symbol in positions_to_remove:
-                del state["positions"][symbol]
+            # 1. Reset Counters
+            state["total_trades_today"] = 0
+            state["stock_trade_counts"] = {}
+            state["signals"] = [] # Clear daily signals
+            
+            # 2. Clear CLOSED positions from previous days
+            # (Keep OPEN positions intact)
+            positions = state.get("positions", {})
+            positions_to_remove = []
+            
+            for symbol, pos in positions.items():
+                if pos.get("status") == "CLOSED":
+                    # We can aggressively remove ALL closed positions on reset
+                    # OR carefully remove only old ones. 
+                    # Aggressive is cleaner for "Daily Reset".
+                    positions_to_remove.append(symbol)
+                elif pos.get("status") == "OPEN":
+                    logger.info(f"⚠️ Keeping OPEN position {symbol} during daily reset.")
+
+            if positions_to_remove:
+                logger.info(f"🗑️ Clearing {len(positions_to_remove)} closed positions.")
+                for symbol in positions_to_remove:
+                    del state["positions"][symbol]
+            
+            # 3. Update Reset Date
+            state["last_reset_date"] = current_date_str
             save_state(state)
-
-
+            logger.info("✅ Daily Reset Completed & Saved.")
+        else:
+            # Already reset for today or future date (unlikely)
+            pass
