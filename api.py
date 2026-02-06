@@ -99,11 +99,16 @@ class PositionSizingConfig(BaseModel):
     min_sl_distance_pct: float
     paper_trading_balance: float
 
+class CredentialsConfig(BaseModel):
+    dhan_client_id: str
+    dhan_access_token: str
+
 class FullConfig(BaseModel):
     risk: RiskConfig
     limits: LimitsConfig
     general: GeneralConfig
     position_sizing: PositionSizingConfig
+    credentials: CredentialsConfig
 
 @app.get("/")
 def read_root():
@@ -124,6 +129,7 @@ def update_config(config: FullConfig):
         config_manager.update("limits", config.limits.dict())
         config_manager.update("general", config.general.dict())
         config_manager.update("position_sizing", config.position_sizing.dict())
+        config_manager.update("credentials", config.credentials.dict())
         return {"status": "success", "message": "Config updated"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

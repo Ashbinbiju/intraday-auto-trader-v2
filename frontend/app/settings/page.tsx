@@ -13,7 +13,8 @@ export default function SettingsPage() {
         risk: { stop_loss_pct: 0.01, target_pct: 0.02, trail_be_trigger: 0.012 },
         position_sizing: { mode: 'dynamic', risk_per_trade_pct: 1.0, max_position_size_pct: 20.0, min_sl_distance_pct: 0.6, paper_trading_balance: 100000 },
         limits: { max_trades_per_day: 3, max_trades_per_stock: 2, trading_end_time: "14:45", trading_start_time: "09:30" },
-        general: { quantity: 1, check_interval: 300, dry_run: true }
+        general: { quantity: 1, check_interval: 300, dry_run: true },
+        credentials: { dhan_client_id: "", dhan_access_token: "" }
     });
 
     useEffect(() => {
@@ -63,6 +64,10 @@ export default function SettingsPage() {
                     quantity: parseInt(config.general.quantity as any) || 1,
                     check_interval: 300,
                     dry_run: config.general.dry_run
+                },
+                credentials: {
+                    dhan_client_id: config.credentials?.dhan_client_id || "",
+                    dhan_access_token: config.credentials?.dhan_access_token || ""
                 }
             };
 
@@ -139,6 +144,32 @@ export default function SettingsPage() {
                                 value={config.risk.trail_be_trigger}
                                 onChange={(e) => handleChange('risk', 'trail_be_trigger', e.target.value)}
                                 className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none"
+                            />
+                        </div>
+                    </div>
+                </div>
+
+                {/* API Credentials */}
+                <div className="bg-white/5 border border-white/10 rounded-xl p-6">
+                    <h3 className="text-xl font-bold mb-4 text-purple-400">API Credentials</h3>
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-xs text-gray-500 mb-1">Dhan Client ID (e.g., 100...)</label>
+                            <input
+                                type="text"
+                                value={config.credentials?.dhan_client_id || ""}
+                                onChange={(e) => handleChange('credentials', 'dhan_client_id', e.target.value)}
+                                className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-purple-500 outline-none"
+                                placeholder="Enter Client ID"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs text-gray-500 mb-1">Dhan Access Token (JWT)</label>
+                            <textarea
+                                value={config.credentials?.dhan_access_token || ""}
+                                onChange={(e) => handleChange('credentials', 'dhan_access_token', e.target.value)}
+                                className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-purple-500 outline-none h-24 text-xs font-mono"
+                                placeholder="eyJ..."
                             />
                         </div>
                     </div>
