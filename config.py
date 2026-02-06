@@ -14,8 +14,8 @@ DEFAULT_CONFIG = {
     "limits": {
         "max_trades_per_day": 3,
         "max_trades_per_stock": 2,
-        "trading_start_time": "09:30",
-        "trading_end_time": "14:45"
+        "trading_start_time": "09:20",
+        "trading_end_time": "11:00"
     },
     "general": {
         "quantity": 1,

@@ -33,10 +33,13 @@ async def start_order_update_ws():
     """
     logger.info("Waiting for SmartAPI Session to initialize...")
     while True:
-        if main.SMART_API_SESSION and hasattr(main.SMART_API_SESSION, 'jwt_token'):
-            token = main.SMART_API_SESSION.jwt_token
+        if main.SMART_API_SESSION and hasattr(main.SMART_API_SESSION, 'access_token'): # Check connectivity
+            # Get IDs from config
+            client_id = config_manager.get("credentials", "dhan_client_id")
+            access_token = config_manager.get("credentials", "dhan_access_token")
+            
             logger.info("Session Found! Starting Order Update WebSocket...")
-            order_ws = OrderUpdateWS(token, BOT_STATE, manager)
+            order_ws = OrderUpdateWS(client_id, access_token, BOT_STATE, manager)
             # Run in loop
             await order_ws.connect()
             break

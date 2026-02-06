@@ -83,11 +83,14 @@ def check_buy_condition(df, current_price=None, extension_limit=1.5):
          reasons.append("Red Candle (Price <= Open)")
 
     # 3. Volume Confirmation (Volume Spike > 1.5x Average)
-    # Note: Only check volume on the closed candle basis to avoid partial candle noise, 
-    # unless we are sure current_vol is live and extrapolated. 
-    # For safety, we use the candle's volume.
     if current_vol <= (vol_sma * 1.5):
         reasons.append(f"Low Volume ({current_vol} < 1.5x Avg {int(vol_sma)})")
+
+    # 4. Volatility Guard (Huge Candle Protection)
+    # Reject if candle range > 2% (Too volatile/slippage risk)
+    candle_range_pct = ((last_row['high'] - last_row['low']) / last_row['open']) * 100
+    if candle_range_pct > 2.0:
+        reasons.append(f"Huge Candle ({candle_range_pct:.2f}% > 2%)")
 
     if not reasons:
         # Late Entry Protection (Guard)

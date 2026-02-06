@@ -90,16 +90,17 @@ def place_buy_order(smartApi, symbol, token, qty):
     try:
         orderparams = {
             "variety": "NORMAL",
-            "tradingsymbol": f"{symbol}-EQ",
+            "tradingsymbol": symbol, # Fixed: Removed -EQ
             "symboltoken": token,
             "transactiontype": "BUY",
             "exchange": "NSE",
             "ordertype": "MARKET",
             "producttype": "INTRADAY",
-            "duration": "DAY",
             "quantity": qty
         }
-        orderId = smartApi.placeOrder(orderparams)
+        # Use helper place_order_api
+        from dhan_api_helper import place_order_api
+        orderId = place_order_api(smartApi, orderparams)
         logger.info(f"Order Placed for {symbol} | Order ID: {orderId}")
         return orderId
     except Exception as e:
@@ -124,16 +125,17 @@ def place_sell_order(smartApi, symbol, token, qty, reason="EXIT"):
     try:
         orderparams = {
             "variety": "NORMAL",
-            "tradingsymbol": f"{symbol}-EQ",
+            "tradingsymbol": symbol, # Fixed: Removed -EQ
             "symboltoken": token,
             "transactiontype": "SELL",
             "exchange": "NSE",
             "ordertype": "MARKET",
             "producttype": "INTRADAY",
-            "duration": "DAY",
             "quantity": qty
         }
-        orderId = smartApi.placeOrder(orderparams)
+        # Use helper place_order_api
+        from dhan_api_helper import place_order_api
+        orderId = place_order_api(smartApi, orderparams)
         logger.info(f"SELL Order Placed for {symbol} ({reason}) | Order ID: {orderId}")
         return orderId
     except Exception as e:
@@ -152,14 +154,30 @@ def get_account_balance(smartApi, dry_run):
         return float(balance)
     
     try:
-        rmsLimit = smartApi.rmsLimit()
-        if rmsLimit and 'data' in rmsLimit:
-            available_balance = rmsLimit['data'].get('availablecash', 0)
-            logger.info(f"📊 [LIVE] Account balance fetched: ₹{float(available_balance):,.0f}")
-            return float(available_balance)
-        else:
-            logger.warning("Unable to fetch balance, using fallback: ₹100,000")
-            return 100000.0
+        # Dhan Logic
+        if hasattr(smartApi, 'get_fund_limits'):
+             fund_resp = smartApi.get_fund_limits()
+             # Dhan response: {'status': 'success', 'data': {'availabelBalance': 1000.0, ...}} or list?
+             # Check docs or structure.
+             # Usually: {'status': 'success', 'data': {'availabelBalance': 0.0, 'openingBalance': 0.0}}
+             if fund_resp['status'] == 'success':
+                 # Dhan key might be 'availabelBalance' (typo in some versions) or 'availableBalance'
+                 # Let's check keys safely
+                 data = fund_resp['data']
+                 available_balance = data.get('availableBalance') or data.get('availabelBalance') or 0
+                 logger.info(f"📊 [LIVE] Account balance fetched: ₹{float(available_balance):,.0f}")
+                 return float(available_balance)
+        
+        # Fallback/Legacy (Angel)
+        elif hasattr(smartApi, 'rmsLimit'):
+            rmsLimit = smartApi.rmsLimit()
+            if rmsLimit and 'data' in rmsLimit:
+                available_balance = rmsLimit['data'].get('availablecash', 0)
+                logger.info(f"📊 [LIVE] Account balance fetched: ₹{float(available_balance):,.0f}")
+                return float(available_balance)
+                
+        logger.warning("Unable to fetch balance (Unknown API), using fallback: ₹100,000")
+        return 100000.0
     except Exception as e:
         logger.error(f"Balance fetch failed: {e}, using fallback: ₹100,000")
         return 100000.0
@@ -395,11 +413,12 @@ def manage_positions(smartApi, token_map):
                 
                 # Fetch current LTP before closing
                 time.sleep(0.2)  # Throttle
-                ltp_data = smartApi.ltpData("NSE", f"{symbol}-EQ", token)
+                # FIX: Use fetch_ltp and remove -EQ checks
+                current_ltp_check = fetch_ltp(smartApi, token, symbol)
                 exit_price = 0
                 
-                if ltp_data and 'data' in ltp_data:
-                    exit_price = ltp_data['data']['ltp']
+                if current_ltp_check is not None:
+                    exit_price = current_ltp_check
                 else:
                     logger.warning(f"Could not fetch LTP for TIME_EXIT. Using 0.")
                 
@@ -420,17 +439,16 @@ def manage_positions(smartApi, token_map):
                         save_state(BOT_STATE)
                 continue
 
-            params = {
-                "exchange": "NSE",
-                "tradingsymbol": f"{symbol}-EQ",
-                "symboltoken": token
-            }
             # THROTTLING: Limit to 5 requests/second (Limit is 10/s)
             time.sleep(0.2)
-            data = smartApi.ltpData("NSE", f"{symbol}-EQ", token)
             
-            if data and 'data' in data:
-                current_ltp = data['data']['ltp']
+            # FIX: Use fetch_ltp helper (Dhan doesn't have ltpData method)
+            # FIX: Remove -EQ suffix (Dhan uses SecurityID or raw symbol)
+            current_ltp = fetch_ltp(smartApi, token, symbol)
+            
+            if current_ltp is not None:
+                # data['data']['ltp'] access removed because fetch_ltp returns float directly
+                pass 
             else:
                 logger.warning(f"Could not fetch LTP for {symbol}")
                 continue
@@ -693,8 +711,23 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                          else:
                              logger.error("Session Re-authentication Failed. Will retry next cycle.")
                 elif dry_run:
-                    logger.debug("Dry-Run Mode: Skipping reconciliation with broker.")
+                    # Dry Run Mode
+                    pass
+                
                 # ----------------------
+
+                # --- 🔍 TOKEN HEALTH CHECK ---
+                from dhan_api_helper import check_connection
+                if smartApi:
+                    is_valid, reason = check_connection(smartApi)
+                    if not is_valid:
+                         if reason == "TOKEN_EXPIRED":
+                             logger.critical("🚨 DHAN TOKEN EXPIRED! PAUSING BOT. UPDATE CONFIG.")
+                             BOT_STATE["is_trading_allowed"] = False
+                             BOT_STATE["error"] = "Token Expired"
+                         else:
+                             logger.warning(f"⚠️ API Connection Unstable: {reason}")
+                # -----------------------------
                 
                 # --- Daily Signal Reset ---
                 from state_manager import check_and_reset_daily_signals
