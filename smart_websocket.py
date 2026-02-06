@@ -49,10 +49,19 @@ class OrderUpdateWS:
                     # 2. Listen for Messages
                     async for message in websocket:
                         try:
+                            # Handle Binary/Bytes frames (Heartbeats or Non-JSON)
+                            if isinstance(message, bytes):
+                                logger.debug(f"ℹ️ Received Binary Frame ({len(message)} bytes): {message}")
+                                # Attempt to decode if it looks like a heartbeat
+                                # The observed pattern b'2\n\x00(\x03' might be a keep-alive
+                                continue
+                            
+                            # Handle Text frames
                             data = json.loads(message)
                             await self.process_message(data)
+                            
                         except json.JSONDecodeError:
-                            logger.error(f"❌ JSON Decode Error: {message}")
+                            logger.warning(f"⚠️ Received invalid JSON: {message}")
                         except Exception as e:
                             logger.error(f"❌ Error processing message: {e}")
 
