@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { getWsUrl } from '@/lib/api';
+import { getWsUrl, getBaseUrl } from '@/lib/api';
+import axios from 'axios';
 
 export function useWebSocket() {
     const [data, setData] = useState<any>(null);
@@ -7,6 +8,21 @@ export function useWebSocket() {
     const ws = useRef<WebSocket | null>(null);
 
     useEffect(() => {
+        // Initial Fetch (Fix for navigation reset)
+        const fetchInitialState = async () => {
+            try {
+                const baseUrl = getBaseUrl();
+                const res = await axios.get(`${baseUrl}/data`);
+                if (res.data) {
+                    console.log("Initial State Fetched (HTTP)", res.data);
+                    setData(res.data);
+                }
+            } catch (e) {
+                console.error("Failed to fetch initial state", e);
+            }
+        };
+        fetchInitialState();
+
         const connect = () => {
             if (ws.current) return;
 
