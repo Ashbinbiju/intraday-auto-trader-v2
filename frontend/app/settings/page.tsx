@@ -91,6 +91,22 @@ export default function SettingsPage() {
                 >
                     <Save size={18} /> {saving ? 'Saving...' : 'Save Configuration'}
                 </button>
+                <div className="mx-2"></div>
+                <button
+                    onClick={async () => {
+                        if (confirm("Are you sure you want to restart the backend server?")) {
+                            try {
+                                await axios.post(`${API_URL}/restart`);
+                                alert("Server restart triggered. Please wait 30s.");
+                            } catch (e) {
+                                alert("Failed to trigger restart.");
+                            }
+                        }
+                    }}
+                    className="bg-red-600 hover:bg-red-500 px-4 py-2 rounded-lg font-bold text-sm"
+                >
+                    Restart Server
+                </button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

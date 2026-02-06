@@ -158,6 +158,20 @@ def close_position(symbol: str):
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/restart")
+def restart_server():
+    """
+    Kills the server process. 
+    On Render/Container environments, this triggers an automatic restart.
+    """
+    def kill():
+        import time
+        time.sleep(1)
+        os._exit(1)
+        
+    threading.Thread(target=kill).start()
+    return {"status": "success", "message": "Server restarting in 1s..."}
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
