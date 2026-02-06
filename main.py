@@ -750,14 +750,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                 logger.info("No sector data available. Skipping scan. 📉")
                 pass
             
-            # Transform keys to match dashboard expectations (sector_name, pct_change)
-            target_sectors = []
-            for sector in (sectors[:4] if sectors else []):
-                target_sectors.append({
-                    "sector_name": sector.get("name", "Unknown"),
-                    "key": sector.get("key", ""),
-                    "pct_change": sector.get("change", 0)
-                })
+            target_sectors = sectors[:4] if sectors else []
             BOT_STATE["top_sectors"] = target_sectors
 
             stocks_to_scan = []
