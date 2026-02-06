@@ -17,7 +17,7 @@ export default function SettingsPage() {
     });
 
     useEffect(() => {
-        axios.get(`${API_URL}/settings`)
+        axios.get(`${API_URL}/config`)
             .then(res => {
                 if (res.data) setConfig(res.data);
             })
@@ -66,7 +66,7 @@ export default function SettingsPage() {
                 }
             };
 
-            await axios.post(`${API_URL}/settings`, payload);
+            await axios.post(`${API_URL}/config`, payload);
             alert("Settings Saved Successfully!");
         } catch (err) {
             alert("Failed to save settings.");
