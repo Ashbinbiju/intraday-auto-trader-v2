@@ -25,16 +25,20 @@ class OrderUpdateWS:
 
         while self.is_running:
             try:
-                # SSL Context for secure wss
-                ssl_context = ssl.create_default_context()
-                ssl_context.check_hostname = False
-                ssl_context.verify_mode = ssl.CERT_NONE
+                # Standard SSL Context (Match library behavior)
+                # ssl_context = ssl.create_default_context()
+                # ssl_context.check_hostname = False
+                # ssl_context.verify_mode = ssl.CERT_NONE
 
-                async with websockets.connect(self.url, ssl=ssl_context) as websocket:
+                async with websockets.connect(self.url) as websocket:
                     self.ws = websocket
                     logger.info("✅ Connected to Dhan WebSocket")
 
                     # 1. Send Authorization Packet
+                    # DEBUG: Log Creds (Masked)
+                    masked_token = self.access_token[:4] + "****" + self.access_token[-4:] if self.access_token else "None"
+                    logger.info(f"📤 Sending Auth Packet for Client: {self.client_id} | Token: {masked_token}")
+
                     auth_packet = {
                         "LoginReq": {
                             "MsgCode": 42,
@@ -44,16 +48,14 @@ class OrderUpdateWS:
                         "UserType": "SELF"
                     }
                     await websocket.send(json.dumps(auth_packet))
-                    logger.info("📤 Sent Auth Packet")
 
                     # 2. Listen for Messages
                     async for message in websocket:
                         try:
-                            # Handle Binary/Bytes frames (Heartbeats or Non-JSON)
+                            # Handle Binary/Bytes frames (Heartbeats or Disconnect Packets)
                             if isinstance(message, bytes):
-                                logger.debug(f"ℹ️ Received Binary Frame ({len(message)} bytes): {message}")
-                                # Attempt to decode if it looks like a heartbeat
-                                # The observed pattern b'2\n\x00(\x03' might be a keep-alive
+                                hex_msg = message.hex()
+                                logger.warning(f"ℹ️ Received Binary Frame: {hex_msg} | Raw: {message}")
                                 continue
                             
                             # Handle Text frames
