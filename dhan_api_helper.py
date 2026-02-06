@@ -246,3 +246,17 @@ def place_order_api(dhan, params):
     except Exception as e:
         logger.error(f"Error placing order (Dhan): {e}")
         return None
+
+def fetch_holdings(dhan):
+    """
+    Fetches Current Holdings.
+    """
+    try:
+        resp = dhan.get_holdings()
+        if resp['status'] == 'success':
+            return resp['data']
+        return []
+    except Exception as e:
+        logger.error(f"Error fetching holdings (Dhan): {e}")
+        return []
+
