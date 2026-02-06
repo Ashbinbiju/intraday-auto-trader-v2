@@ -95,6 +95,19 @@ class ConfigManager:
         for k in keys[:-1]:
             d = d.setdefault(k, {})
         d[keys[-1]] = value
+        d[keys[-1]] = value
+        self.save_config()
+
+    def get_all(self):
+        """Returns the full configuration dictionary."""
+        return self.config
+
+    def update(self, section, value):
+        """Updates a configuration section and saves."""
+        if section in self.config and isinstance(self.config[section], dict) and isinstance(value, dict):
+            self.config[section].update(value)
+        else:
+            self.config[section] = value
         self.save_config()
 
 # Global Instance
