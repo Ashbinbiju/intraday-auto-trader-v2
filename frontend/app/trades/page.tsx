@@ -35,12 +35,11 @@ export default function TradesPage() {
 
     const toggleKillSwitch = async () => {
         const isAllowed = localData?.is_trading_allowed;
-        const action = isAllowed ? 'kill-switch' : 'resume';
         if (!confirm(`Are you sure you want to ${isAllowed ? 'STOP' : 'RESUME'} all trading?`)) return;
 
         try {
             const baseUrl = getBaseUrl();
-            await axios.post(`${baseUrl}/bot/${action}`);
+            await axios.post(`${baseUrl}/toggle`);
             // WS update will reflect change
         } catch (err) {
             alert("Failed to toggle Kill Switch");
