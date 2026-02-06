@@ -279,7 +279,12 @@ class AsyncScanner:
                                 live_ltp = 0.0
                                 try:
                                     from smart_api_helper import fetch_ltp
-                                    live_ltp = fetch_ltp(self.smartApi, token, symbol)
+                                    # Fix: Re-fetch token for the CURRENT symbol!
+                                    current_token = token_map.get(symbol)
+                                    if current_token:
+                                        live_ltp = fetch_ltp(self.smartApi, current_token, symbol)
+                                    else:
+                                        logger.warning(f"⚠️ {symbol}: Token not found for LTP fetch")
                                     if live_ltp is None or live_ltp == 0:
                                         # Fallback to scraper price if Angel API fails
                                         live_ltp = stock_info['ltp'] if stock_info else 0.0
@@ -298,7 +303,7 @@ class AsyncScanner:
                                 })
                         else:
                             # Log ALL rejections for debugging (since we have 0 signals)
-                            last_row = df.iloc[-1]
+                            last_row = df_5m.iloc[-1]
                             close_p = last_row['close']
                             ema_20 = last_row['EMA_20']
                             # rsi_val = last_row.get('RSI', 0) # Removed as RSI is not calculated
