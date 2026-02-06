@@ -31,9 +31,9 @@ async def start_order_update_ws():
     """
     Waits for SmartAPI session and starts Order Update WS.
     """
-    logger.info("Waiting for SmartAPI Session to initialize...")
+    logger.info("Waiting for Dhan API Session to initialize...")
     while True:
-        if main.SMART_API_SESSION and hasattr(main.SMART_API_SESSION, 'access_token'): # Check connectivity
+        if main.SMART_API_SESSION: # Check connectivity (Dhan object exists)
             # Get IDs from config
             client_id = config_manager.get("credentials", "dhan_client_id")
             access_token = config_manager.get("credentials", "dhan_access_token")
