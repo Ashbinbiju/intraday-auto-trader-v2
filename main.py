@@ -533,7 +533,7 @@ def manage_positions(smartApi, token_map):
                         # LOG TO SUPABASE
                         trade_log = pos.copy()
                         trade_log['pnl'] = (current_ltp - entry_price) * pos['qty']
-                        trade_log['exit_time'] = datetime.now().isoformat()
+                        trade_log['exit_time'] = datetime.datetime.now().isoformat()
                         threading.Thread(target=log_trade_to_db, args=(trade_log,)).start()
 
                         save_state(BOT_STATE)
@@ -793,9 +793,19 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                 # This fixes the "Post-Market 0.0" data issue by remembering valid High/Low from earlier.
                 index_memory = BOT_STATE.setdefault("index_memory", {})
                 
-                # Run Async Scan (Blocking Call)
-                # Pass index_memory to allow Scanner to Use/Update it
-                signals = asyncio.run(scanner.scan(stocks_to_scan, token_map, index_memory))
+                try:
+                    # Run Async Scan (Blocking Call)
+                    # Protected against Event Loop conflicts
+                    signals = asyncio.run(scanner.scan(stocks_to_scan, token_map, index_memory))
+                except RuntimeError as re:
+                     # This catches "asyncio.run() cannot be called from a running event loop"
+                     logger.critical(f"CRITICAL ASYNCIO ERROR: {re}. Is the bot passing an existing loop?")
+                     # Fallback: Try using the existing loop if available (dangerous but worth a shot in emergency)
+                     # For now, just skip scan to keep bot alive
+                     signals = []
+                except Exception as e:
+                     logger.error(f"Scanner Crash: {e}")
+                     signals = []
             
             # Save Updated Memory (Logic in Scanner updates the dict in-place)
             save_state(BOT_STATE) 

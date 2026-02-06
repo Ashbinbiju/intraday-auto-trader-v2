@@ -22,7 +22,9 @@ class AsyncScanner:
         self.smartApi = smartApi # Store SmartAPI Object
         self.api_key = API_KEY
         self.client_code = CLIENT_CODE
-        self.sem = asyncio.Semaphore(concurrency)
+        self.concurrency = concurrency # Store for late init
+        # self.sem is initialized in scan() to perform on the correct loop
+        self.sem = None 
         self.timeout = aiohttp.ClientTimeout(total=timeout)
         self.base_url = "https://apiconnect.angelbroking.com"
         self.endpoint = "/rest/secure/angelbroking/historical/v1/getCandleData"
@@ -197,6 +199,9 @@ class AsyncScanner:
         """
         start_time = datetime.now()
         logger.info(f"Starting Async Scan for {len(stocks_list)} stocks...")
+        
+        # Initialize Semaphore inside the loop to ensure Loop Affinity
+        self.sem = asyncio.Semaphore(self.concurrency)
         
         signals = []
         
