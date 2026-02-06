@@ -115,7 +115,7 @@ export default function SettingsPage() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Left Column: Trading Logic */}
+                {/* Left Column: Risk & Credentials */}
                 <div className="space-y-6">
                     {/* Risk Rules */}
                     <div className="bg-white/5 border border-white/10 rounded-xl p-6">
@@ -151,54 +151,6 @@ export default function SettingsPage() {
                         </div>
                     </div>
 
-                    {/* Trade Limits */}
-                    <div className="bg-white/5 border border-white/10 rounded-xl p-6">
-                        <h3 className="text-xl font-bold mb-4 text-orange-400">Trade Limits</h3>
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-xs text-gray-500 mb-1">Max Trades Per Day</label>
-                                <input
-                                    type="number"
-                                    value={config.limits.max_trades_per_day}
-                                    onChange={(e) => handleChange('limits', 'max_trades_per_day', e.target.value)}
-                                    className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs text-gray-500 mb-1">Max Trades Per Stock</label>
-                                <input
-                                    type="number"
-                                    value={config.limits.max_trades_per_stock}
-                                    onChange={(e) => handleChange('limits', 'max_trades_per_stock', e.target.value)}
-                                    className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none"
-                                />
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs text-gray-500 mb-1">Start Time</label>
-                                    <input
-                                        type="time"
-                                        value={config.limits.trading_start_time || "09:30"}
-                                        onChange={(e) => handleChange('limits', 'trading_start_time', e.target.value)}
-                                        className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs text-gray-500 mb-1">End Time</label>
-                                    <input
-                                        type="time"
-                                        value={config.limits.trading_end_time}
-                                        onChange={(e) => handleChange('limits', 'trading_end_time', e.target.value)}
-                                        className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none"
-                                    />
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Right Column: Config & Creds */}
-                <div className="space-y-6">
                     {/* API Credentials */}
                     <div className="bg-gradient-to-br from-cyan-500/10 to-blue-500/10 border border-cyan-500/30 rounded-xl p-6 shadow-lg shadow-cyan-900/20">
                         <h3 className="text-xl font-bold mb-4 text-cyan-400 flex items-center gap-2">
@@ -244,6 +196,54 @@ export default function SettingsPage() {
                                     <p className="text-[10px] text-gray-400 mt-2">
                                         * Expires every 24h. Updates apply immediately.
                                     </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Right Column: Limits & General */}
+                <div className="space-y-6">
+                    {/* Trade Limits */}
+                    <div className="bg-white/5 border border-white/10 rounded-xl p-6">
+                        <h3 className="text-xl font-bold mb-4 text-orange-400">Trade Limits</h3>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs text-gray-500 mb-1">Max Trades Per Day</label>
+                                <input
+                                    type="number"
+                                    value={config.limits.max_trades_per_day}
+                                    onChange={(e) => handleChange('limits', 'max_trades_per_day', e.target.value)}
+                                    className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs text-gray-500 mb-1">Max Trades Per Stock</label>
+                                <input
+                                    type="number"
+                                    value={config.limits.max_trades_per_stock}
+                                    onChange={(e) => handleChange('limits', 'max_trades_per_stock', e.target.value)}
+                                    className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none"
+                                />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs text-gray-500 mb-1">Start Time</label>
+                                    <input
+                                        type="time"
+                                        value={config.limits.trading_start_time || "09:30"}
+                                        onChange={(e) => handleChange('limits', 'trading_start_time', e.target.value)}
+                                        className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs text-gray-500 mb-1">End Time</label>
+                                    <input
+                                        type="time"
+                                        value={config.limits.trading_end_time}
+                                        onChange={(e) => handleChange('limits', 'trading_end_time', e.target.value)}
+                                        className="w-full bg-black/40 border border-white/10 rounded-lg p-2 focus:border-blue-500 outline-none"
+                                    />
                                 </div>
                             </div>
                         </div>
