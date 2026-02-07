@@ -1,7 +1,8 @@
-import asyncio
-import websockets
+import threading
 import json
 import logging
+import time
+import websocket
 import ssl
 
 logger = logging.getLogger("DhanSmartWS")
@@ -11,141 +12,138 @@ class OrderUpdateWS:
         self.url = "wss://api-order-update.dhan.co"
         self.client_id = client_id
         self.access_token = access_token
-        self.bot_state = bot_state  # Reference to shared state
-        self.ws_manager = ws_manager  # To broadcast updates
+        self.bot_state = bot_state
+        self.ws_manager = ws_manager
         self.ws = None
         self.is_running = False
+        self.thread = None
 
-    async def connect(self):
+    def on_open(self, ws):
+        logger.info("✅ Connected to Dhan WebSocket (Threaded)")
+        
+        # 1. Send Login Request
+        masked_token = self.access_token[:4] + "****" + self.access_token[-4:] if self.access_token else "None"
+        logger.info(f"📤 Sending Auth Packet for Client: {self.client_id} | Token: {masked_token}")
+
+        auth_packet = {
+            "LoginReq": {
+                "MsgCode": 42,
+                "ClientId": str(self.client_id),
+                "Token": str(self.access_token)
+            },
+            "UserType": "SELF"
+        }
+        ws.send(json.dumps(auth_packet))
+
+    def on_message(self, ws, message):
         """
-        Connects and listens to the Dhan Signal WebSocket.
+        Handles Incoming Messages (Both Text and Binary if library passes them here)
+        Note: websocket-client handles pings automatically usually, but Dhan might send custom binary frames.
+        """
+        try:
+            # Handle Binary Heartbeat (0x32) manually if passed as bytes/string
+            # Only relevant if 'on_data' is not used.
+            if isinstance(message, bytes):
+                 if len(message) > 0 and message[0] == 50: # '2'
+                    logger.debug("❤️ Heartbeat received. Sending Pong '3'.")
+                    ws.send("3")
+                    return
+                 
+            # If message is text '2' (sometimes happen)
+            if message == "2":
+                 logger.debug("❤️ Heartbeat received (Text). Sending Pong '3'.")
+                 ws.send("3")
+                 return
+
+            # Parse JSON
+            data = json.loads(message)
+            self.process_message(data)
+
+        except Exception as e:
+            logger.error(f"❌ Error processing message: {e}")
+
+    def on_data(self, ws, message, data_type, continue_flag):
+        """
+        Explicit handler for frame data (Text vs Binary).
+        ABNF.OPCODE_BINARY = 0x2
+        ABNF.OPCODE_TEXT = 0x1
+        """
+        if data_type == websocket.ABNF.OPCODE_BINARY:
+            if len(message) > 0 and message[0] == 50: # '2'
+                logger.info("❤️ Heartbeat received (Binary '2'). Sending Pong '3'.")
+                ws.send("3")
+        elif data_type == websocket.ABNF.OPCODE_TEXT:
+            # Decode and process
+            try:
+                decoded = message.decode('utf-8')
+                self.on_message(ws, decoded)
+            except Exception as e:
+                logger.error(f"Text Decode Error: {e}")
+
+    def on_error(self, ws, error):
+        logger.error(f"⚠️ WebSocket Error: {error}")
+
+    def on_close(self, ws, close_status_code, close_msg):
+        logger.info(f"🔌 WebSocket Closed: {close_status_code} - {close_msg}")
+
+    def connect(self):
+        """
+        Starts the WebSocket connection in a separate thread.
+        NOTE: This method is now non-blocking (async compatible wrapper not needed here as we use threading)
         """
         self.is_running = True
-        logger.info(f"🔄 Connecting to Dhan WebSocket: {self.url}")
+        
+        def run_forever():
+            while self.is_running:
+                try:
+                    # Enable trace for debugging if needed
+                    # websocket.enableTrace(True)
+                    self.ws = websocket.WebSocketApp(
+                        self.url,
+                        on_open=self.on_open,
+                        on_message=self.on_message,
+                        on_error=self.on_error,
+                        on_close=self.on_close,
+                        on_data=self.on_data # Important for Binary
+                    )
+                    
+                    self.ws.run_forever(
+                        sslopt={"cert_reqs": ssl.CERT_NONE},
+                        ping_interval=None, # We handle custom pings
+                        ping_timeout=10
+                    )
+                except Exception as e:
+                    logger.error(f"WS Run Loop failed: {e}")
+                
+                if self.is_running:
+                    logger.info("Reconnecting in 5s...")
+                    time.sleep(5)
 
-        while self.is_running:
-            try:
-                # Standard SSL Context (Match library behavior)
-                # ssl_context = ssl.create_default_context()
-                # ssl_context.check_hostname = False
-                # ssl_context.verify_mode = ssl.CERT_NONE
+        self.thread = threading.Thread(target=run_forever, daemon=True)
+        self.thread.start()
+        
+        # Async compatibility: just return formatted for await
+        loop = asyncio.new_event_loop() 
+        asyncio.set_event_loop(loop)
+        return
 
-                async with websockets.connect(self.url) as websocket:
-                    self.ws = websocket
-                    logger.info("✅ Connected to Dhan WebSocket")
-
-                    # 1. Send Authorization Packet
-                    # DEBUG: Log Creds (Masked)
-                    masked_token = self.access_token[:4] + "****" + self.access_token[-4:] if self.access_token else "None"
-                    logger.info(f"📤 Sending Auth Packet for Client: {self.client_id} | Token: {masked_token}")
-
-                    auth_packet = {
-                        "LoginReq": {
-                            "MsgCode": 42,
-                            "ClientId": str(self.client_id),
-                            "Token": str(self.access_token)
-                        },
-                        "UserType": "SELF"
-                    }
-                    await websocket.send(json.dumps(auth_packet))
-
-                    # 2. Listen for Messages
-                    async for message in websocket:
-                        try:
-                            # Handle Binary/Bytes frames (Heartbeats or Disconnect Packets)
-                            if isinstance(message, bytes):
-                                # Dhan/EIO Heartbeat: 0x32 (ASCII '2') -> Reply '3'
-                                if len(message) > 0 and message[0] == 50: # 50 = '2'
-                                    logger.info("❤️ Heartbeat received (Binary '2'). Sending Pong '3'.")
-                                    await websocket.send("3") # Text '3' is standard response for EIO
-                                    continue
-                                
-                                hex_msg = message.hex()
-                                logger.warning(f"ℹ️ Received Unknown Binary Frame: {hex_msg} | Raw: {message}")
-                                continue
-                            
-                            # Handle Text frames
-                            data = json.loads(message)
-                            await self.process_message(data)
-                            
-                        except json.JSONDecodeError:
-                            logger.warning(f"⚠️ Received invalid JSON: {message}")
-                        except Exception as e:
-                            logger.error(f"❌ Error processing message: {e}")
-
-            except Exception as e:
-                logger.error(f"🔌 WebSocket Disconnected: {e}. Reconnecting in 5s...")
-                await asyncio.sleep(5)
-
-    async def process_message(self, data):
-        """
-        Processes incoming Order Update packets.
-        """
+    def process_message(self, data):
         msg_type = data.get("Type")
-
         if msg_type == "order_alert":
-            order_data = data.get("Data", {})
-            self.handle_order_update(order_data)
-        else:
-            # Heartbeats or other messages
-            pass
+            self.handle_order_update(data.get("Data", {}))
 
     def handle_order_update(self, data):
-        """
-        Updates Bot State based on Order Updates.
-        Dhan Status: TRANSIT, PENDING, REJECTED, CANCELLED, TRADED, EXPIRED
-        """
         order_id = data.get("OrderNo")
-        status = data.get("Status")  # Dhan Status
-        symbol = data.get("TradingSymbol") or data.get("DisplayName") # Fallback
+        status = data.get("Status")
+        symbol = data.get("TradingSymbol") or data.get("DisplayName")
         
-        # Determine internal status
-        internal_status = "UNKNOWN"
-        if status in ["TRADED"]:
-            internal_status = "FILLED"
-        elif status in ["PENDING", "TRANSIT"]:
-            internal_status = "PENDING"
-        elif status in ["CANCELLED"]:
-            internal_status = "CANCELLED"
-        elif status in ["REJECTED"]:
-            internal_status = "REJECTED"
+        logger.info(f"🔔 Order Update: {symbol} | ID: {order_id} | Status: {status}")
 
-        logger.info(f"🔔 Order Update: {symbol} | ID: {order_id} | Status: {status} -> {internal_status}")
-
-        if not self.bot_state:
-            return
-
-        # Update Shared State
-        # Find position/order by order ID if possible, or symbol
-        # For now, simple logging and partial state update
-        
-        # Example: Update positions if TRADED
-        if internal_status == "FILLED":
-            # Logic to update self.bot_state['positions'] would go here
-            # But state reconciliation usually handles this via polling too.
-            # This ensures fast UI updates.
-            pass
-
-        # Broadcast if Manager is available
-        if self.ws_manager:
-            # We construct a simple event to push to frontend
-            event = {
-                "type": "ORDER_UPDATE",
-                "data": {
-                    "order_id": order_id,
-                    "status": internal_status,
-                    "symbol": symbol,
-                    "price": data.get("Price"),
-                    "filled_qty": data.get("TradedQty")
-                }
-            }
-            # Fire and forget (needs async loop handling in real app)
-            # await self.ws_manager.broadcast(event) 
-            logger.info("Broadcasting Order Update (Mock)")
+        # Broadcast (Need to be careful with asyncio from thread)
+        # For now, just logging. 
+        # In real app, put into a queue or use run_coroutine_threadsafe
 
     def stop(self):
         self.is_running = False
         if self.ws:
-            asyncio.create_task(self.ws.close())
-
-# Force Update: 2026-02-08T00:58:26+05:30
+            self.ws.close()
