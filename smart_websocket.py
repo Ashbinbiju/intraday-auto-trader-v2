@@ -4,6 +4,7 @@ import logging
 import time
 import websocket
 import ssl
+import asyncio  # Fix NameError
 
 logger = logging.getLogger("DhanSmartWS")
 
@@ -37,18 +38,9 @@ class OrderUpdateWS:
 
     def on_message(self, ws, message):
         """
-        Handles Incoming Messages (Both Text and Binary if library passes them here)
-        Note: websocket-client handles pings automatically usually, but Dhan might send custom binary frames.
+        Handles Incoming Messages (Text)
         """
         try:
-            # Handle Binary Heartbeat (0x32) manually if passed as bytes/string
-            # Only relevant if 'on_data' is not used.
-            if isinstance(message, bytes):
-                 if len(message) > 0 and message[0] == 50: # '2'
-                    logger.debug("❤️ Heartbeat received. Sending Pong '3'.")
-                    ws.send("3")
-                    return
-                 
             # If message is text '2' (sometimes happen)
             if message == "2":
                  logger.debug("❤️ Heartbeat received (Text). Sending Pong '3'.")
@@ -69,9 +61,13 @@ class OrderUpdateWS:
         ABNF.OPCODE_TEXT = 0x1
         """
         if data_type == websocket.ABNF.OPCODE_BINARY:
-            if len(message) > 0 and message[0] == 50: # '2'
+            # Check for Dhan/EIO Heartbeat: 0x32 (ASCII '2')
+            if len(message) > 0 and message[0] == 50: 
                 logger.info("❤️ Heartbeat received (Binary '2'). Sending Pong '3'.")
-                ws.send("3")
+                # Send Pong as Text '3' explicitly
+                ws.send("3", opcode=websocket.ABNF.OPCODE_TEXT)
+                return
+
         elif data_type == websocket.ABNF.OPCODE_TEXT:
             # Decode and process
             try:
@@ -86,10 +82,10 @@ class OrderUpdateWS:
     def on_close(self, ws, close_status_code, close_msg):
         logger.info(f"🔌 WebSocket Closed: {close_status_code} - {close_msg}")
 
-    def connect(self):
+    async def connect(self):
         """
         Starts the WebSocket connection in a separate thread.
-        NOTE: This method is now non-blocking (async compatible wrapper not needed here as we use threading)
+        Async wrapper for API compatibility.
         """
         self.is_running = True
         
@@ -101,15 +97,15 @@ class OrderUpdateWS:
                     self.ws = websocket.WebSocketApp(
                         self.url,
                         on_open=self.on_open,
-                        on_message=self.on_message,
+                        # on_message is handled via on_data for text frames to avoid double processing
                         on_error=self.on_error,
                         on_close=self.on_close,
-                        on_data=self.on_data # Important for Binary
+                        on_data=self.on_data 
                     )
                     
                     self.ws.run_forever(
                         sslopt={"cert_reqs": ssl.CERT_NONE},
-                        ping_interval=None, # We handle custom pings
+                        ping_interval=0, # Disable lib's auto-ping, we handle custom pings
                         ping_timeout=10
                     )
                 except Exception as e:
@@ -122,9 +118,19 @@ class OrderUpdateWS:
         self.thread = threading.Thread(target=run_forever, daemon=True)
         self.thread.start()
         
-        # Async compatibility: just return formatted for await
-        loop = asyncio.new_event_loop() 
-        asyncio.set_event_loop(loop)
+        # Async compatibility: just return 
+        # API expects an awaitable, so we create a dummy future if needed or just return
+        # But since the caller uses `await order_ws.connect()`, we need to return a future or be async.
+        # However, since we are spawning a thread, we can just return immediately.
+        # But we need to make this function `async` def for api.py compatibility.
+        return
+
+    async def connect_async(self):
+        """
+        Async wrapper for connect() to satisfy await in api.py
+        """
+        self.connect()
+        # Return immediately as the thread runs in background
         return
 
     def process_message(self, data):
@@ -138,10 +144,6 @@ class OrderUpdateWS:
         symbol = data.get("TradingSymbol") or data.get("DisplayName")
         
         logger.info(f"🔔 Order Update: {symbol} | ID: {order_id} | Status: {status}")
-
-        # Broadcast (Need to be careful with asyncio from thread)
-        # For now, just logging. 
-        # In real app, put into a queue or use run_coroutine_threadsafe
 
     def stop(self):
         self.is_running = False
