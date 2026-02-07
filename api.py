@@ -111,6 +111,7 @@ class FullConfig(BaseModel):
     credentials: CredentialsConfig
 
 @app.get("/")
+@app.head("/")
 def read_root():
     return {"status": "Device Online", "service": "IntradayScreener Bot v2.0"}
 

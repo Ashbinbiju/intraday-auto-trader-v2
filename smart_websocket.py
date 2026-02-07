@@ -81,7 +81,23 @@ class OrderUpdateWS:
         logger.error(f"⚠️ WebSocket Error: {error}")
 
     def on_close(self, ws, close_status_code, close_msg):
-        logger.info(f"🔌 WebSocket Closed: {close_status_code} - {close_msg}")
+        logger.info(f"🔌 WebSocket Closed. Code: {close_status_code} | Reason: {close_msg}")
+        if close_status_code:
+            logger.warning(f"⚠️ Close Code {close_status_code} usually means: {self.get_close_reason(close_status_code)}")
+
+    def get_close_reason(self, code):
+        reasons = {
+            1000: "Normal Closure",
+            1001: "Going Away",
+            1002: "Protocol Error",
+            1003: "Unsupported Data",
+            1006: "Abnormal Closure (Connection Dropped)",
+            1008: "Policy Violation",
+            1009: "Message Too Big",
+            1011: "Internal Error",
+            4000: "Dhan: Internal or Auth Error?"
+        }
+        return reasons.get(code, "Unknown")
 
     async def connect(self):
         """
