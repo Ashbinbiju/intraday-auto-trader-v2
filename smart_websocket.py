@@ -64,11 +64,9 @@ class OrderUpdateWS:
             if len(message) > 0 and message[0] == 50: 
                 logger.debug(f"❤️ Binary Heartbeat: {message.hex()}")
                 
-                # Construct Pong: Replace first byte 0x32 (50) with 0x33 (51)
-                # Payload: 0a 00 28 03 (Keep it)
-                pong_msg = b'\x33' + message[1:]
-                logger.info(f"❤️ Sending Binary Pong: {pong_msg.hex()}")
-                ws.send(pong_msg, opcode=websocket.ABNF.OPCODE_BINARY)
+                # Echo the EXACT binary message back
+                logger.info(f"❤️ Echoing Binary Heartbeat: {message.hex()}")
+                ws.send(message, opcode=websocket.ABNF.OPCODE_BINARY)
                 return
 
         elif data_type == websocket.ABNF.OPCODE_TEXT:
