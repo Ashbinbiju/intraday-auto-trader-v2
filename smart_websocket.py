@@ -63,9 +63,9 @@ class OrderUpdateWS:
         if data_type == websocket.ABNF.OPCODE_BINARY:
             # Check for Dhan/EIO Heartbeat: 0x32 (ASCII '2')
             if len(message) > 0 and message[0] == 50: 
-                logger.info("❤️ Heartbeat received (Binary '2'). Sending Pong b'3'.")
+                logger.info("❤️ Heartbeat received (Binary '2'). Ignoring (Testing if Passive Mode works).")
                 # Send Pong as BINARY '3' (0x33) explicitly
-                ws.send(b"3", opcode=websocket.ABNF.OPCODE_BINARY)
+                # ws.send(b"3", opcode=websocket.ABNF.OPCODE_BINARY)
                 return
 
         elif data_type == websocket.ABNF.OPCODE_TEXT:
