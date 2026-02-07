@@ -54,8 +54,14 @@ class OrderUpdateWS:
                         try:
                             # Handle Binary/Bytes frames (Heartbeats or Disconnect Packets)
                             if isinstance(message, bytes):
+                                # Dhan/EIO Heartbeat: 0x32 (ASCII '2') -> Reply '3'
+                                if len(message) > 0 and message[0] == 50: # 50 = '2'
+                                    logger.info("❤️ Heartbeat received (Binary '2'). Sending Pong '3'.")
+                                    await websocket.send("3") # Text '3' is standard response for EIO
+                                    continue
+                                
                                 hex_msg = message.hex()
-                                logger.warning(f"ℹ️ Received Binary Frame: {hex_msg} | Raw: {message}")
+                                logger.warning(f"ℹ️ Received Unknown Binary Frame: {hex_msg} | Raw: {message}")
                                 continue
                             
                             # Handle Text frames
