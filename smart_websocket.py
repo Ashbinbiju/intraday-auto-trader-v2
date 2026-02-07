@@ -63,9 +63,28 @@ class OrderUpdateWS:
         if data_type == websocket.ABNF.OPCODE_BINARY:
             # Check for Dhan/EIO Heartbeat: 0x32 (ASCII '2')
             if len(message) > 0 and message[0] == 50: 
-                logger.info("❤️ Heartbeat received (Binary '2'). Ignoring (Testing if Passive Mode works).")
-                # Send Pong as BINARY '3' (0x33) explicitly
-                # ws.send(b"3", opcode=websocket.ABNF.OPCODE_BINARY)
+                logger.info(f"❤️ Binary '2' Received. Length: {len(message)} | Hex: {message.hex()}")
+                
+                # Check if it's a Disconnection Packet (Length >= 10) based on marketfeed.py
+                if len(message) >= 10:
+                    try:
+                        # Unpack: <BHBIH (1, 2, 1, 4, 2)
+                        import struct
+                        unpacked = struct.unpack('<BHBIH', message[0:10])
+                        error_code = unpacked[4]
+                        logger.error(f"❌ Server Disconnect Packet! Error Code: {error_code}")
+                        
+                        error_map = {
+                            805: "Connection Limit Exceeded",
+                            806: "Subscribe to Data APIs",
+                            807: "Access Token Expired",
+                            808: "Invalid Client ID",
+                            809: "Authentication Failed"
+                        }
+                        logger.error(f"Reason: {error_map.get(error_code, 'Unknown')}")
+                    except Exception as e:
+                        logger.error(f"Failed to parse disconnect packet: {e}")
+                
                 return
 
         elif data_type == websocket.ABNF.OPCODE_TEXT:
