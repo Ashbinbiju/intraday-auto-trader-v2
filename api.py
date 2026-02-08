@@ -93,6 +93,7 @@ class GeneralConfig(BaseModel):
     quantity: int
     check_interval: int
     dry_run: bool
+    strategy_mode: str
 
 class PositionSizingConfig(BaseModel):
     mode: str

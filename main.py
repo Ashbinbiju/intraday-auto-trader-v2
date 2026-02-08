@@ -796,6 +796,10 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                         
                         if raw_movers:
                              logger.info(f"Fetched {len(raw_movers)} market movers. Top: {[m['symbol'] for m in raw_movers[:5]]}")
+                             
+                             # Log to Supabase (Async to avoid blocking)
+                             from database import log_market_movers_to_db
+                             threading.Thread(target=log_market_movers_to_db, args=(raw_movers[:15],)).start()
                         
                         for stock in raw_movers:
                             symbol = stock['symbol']

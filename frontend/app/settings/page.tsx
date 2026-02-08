@@ -62,7 +62,7 @@ export default function SettingsPage() {
                 },
                 general: {
                     quantity: parseInt(config.general.quantity as any) || 1,
-                    check_interval: 300,
+                    check_interval: parseInt(config.general.check_interval as any) || 300,
                     dry_run: config.general.dry_run,
                     strategy_mode: config.general.strategy_mode || "SECTOR_MOMENTUM"
                 },
