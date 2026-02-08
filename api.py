@@ -38,10 +38,12 @@ async def start_order_update_ws():
             client_id = config_manager.get("credentials", "dhan_client_id")
             access_token = config_manager.get("credentials", "dhan_access_token")
             
-            logger.info("Session Found! Starting Order Update WebSocket...")
-            order_ws = OrderUpdateWS(client_id, access_token, BOT_STATE, manager)
+            logger.info("Session Found! Starting Order Update Polling (Fallback)...")
+            from smart_polling import OrderUpdatePoller
+            # order_ws = OrderUpdateWS(client_id, access_token, BOT_STATE, manager)
+            order_poller = OrderUpdatePoller(client_id, access_token, BOT_STATE, manager)
             # Run in loop
-            await order_ws.connect()
+            await order_poller.connect()
             break
         await asyncio.sleep(2)
 

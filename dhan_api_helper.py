@@ -248,3 +248,17 @@ def fetch_holdings(dhan):
     except Exception:
         return []
 
+def fetch_order_list(dhan):
+    """
+    Fetches all orders for the day.
+    Returns list of order dictionaries.
+    """
+    try:
+        resp = dhan.get_order_list()
+        if resp['status'] == 'success':
+            return resp['data']
+        return []
+    except Exception as e:
+        logger.error(f"Error fetching order list: {e}")
+        return []
+
