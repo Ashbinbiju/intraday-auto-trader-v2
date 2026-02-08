@@ -781,46 +781,74 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                     broadcast_state() # Update UI with indices
                 # ----------------------------------
                 
-                # ... (Scanning) ...
-                sectors = fetch_top_performing_sectors()
-                    
-                # ... (Scanning) ...
-                sectors = fetch_top_performing_sectors()
-                if sectors:
-                     logger.info(f"DEBUG: Main Loop Scraped {len(sectors)} sectors. Top: {[s['name'] for s in sectors[:4]]}")
-
-                if not sectors:
-                    logger.info("No sector data available. Skipping scan. 📉")
-                    pass
+                # --- STRATEGY SELECTION ---
+                strategy_mode = config_manager.get("general", "strategy_mode") or "SECTOR_MOMENTUM"
                 
-                target_sectors = sectors[:4] if sectors else []
-                BOT_STATE["top_sectors"] = target_sectors
-    
                 stocks_to_scan = []
                 seen_symbols = set()
-                
-                for sector in target_sectors:
-                    # ... check stocks ...
-                    stocks = fetch_stocks_in_sector(sector['key'])
-                    for stock in stocks:
-                        symbol = stock['symbol']
+
+                if strategy_mode == "MARKET_MOVER":
+                    logger.info("⚡ Strategy: Market Movers (Top Gainers)")
+                    try:
+                        from market_mover import fetch_market_movers
+                        # Fetch Top 50 Gainers to ensure enough candidates
+                        raw_movers = fetch_market_movers("Gainer")
                         
-                        # Dedup
-                        if symbol in seen_symbols: continue
-                        seen_symbols.add(symbol)
+                        if raw_movers:
+                             logger.info(f"Fetched {len(raw_movers)} market movers. Top: {[m['symbol'] for m in raw_movers[:5]]}")
                         
-                        # Skip if Position Open
-                        if symbol in BOT_STATE["positions"] and BOT_STATE["positions"][symbol]["status"] == "OPEN":
-                            continue
+                        for stock in raw_movers:
+                            symbol = stock['symbol']
                             
-                        # Skip if Stock limits hit
-                        current_stock_trades = BOT_STATE["stock_trade_counts"].get(symbol, 0)
-                        if current_stock_trades >= max_trades_stock:
-                            continue
-                        
-                        # Prepare for Async Scan
-                        stock['sector'] = sector['name']
-                        stocks_to_scan.append(stock)
+                            if symbol in seen_symbols: continue
+                            seen_symbols.add(symbol)
+                            
+                            # Skip if Position Open
+                            if symbol in BOT_STATE["positions"] and BOT_STATE["positions"][symbol]["status"] == "OPEN":
+                                continue
+                                
+                            # Skip if Stock limits hit
+                            current_stock_trades = BOT_STATE["stock_trade_counts"].get(symbol, 0)
+                            if current_stock_trades >= max_trades_stock:
+                                continue
+                                
+                            stock['sector'] = "Market Mover"
+                            stocks_to_scan.append(stock)
+                            
+                            # Limit scanning to top 15 candidates as per user request
+                            if len(stocks_to_scan) >= 15: break
+                            
+                    except Exception as e_mover:
+                        logger.error(f"Market Mover Strategy Failed: {e_mover}")
+
+                else:
+                    # DEFAULT: SECTOR MOMENTUM
+                    sectors = fetch_top_performing_sectors()
+                    if sectors:
+                         logger.info(f"DEBUG: Main Loop Scraped {len(sectors)} sectors. Top: {[s['name'] for s in sectors[:4]]}")
+                    else:
+                        logger.info("No sector data available. Skipping scan. 📉")
+                    
+                    target_sectors = sectors[:4] if sectors else []
+                    BOT_STATE["top_sectors"] = target_sectors
+        
+                    for sector in target_sectors:
+                        stocks = fetch_stocks_in_sector(sector['key'])
+                        for stock in stocks:
+                            symbol = stock['symbol']
+                            
+                            if symbol in seen_symbols: continue
+                            seen_symbols.add(symbol)
+                            
+                            if symbol in BOT_STATE["positions"] and BOT_STATE["positions"][symbol]["status"] == "OPEN":
+                                continue
+                                
+                            current_stock_trades = BOT_STATE["stock_trade_counts"].get(symbol, 0)
+                            if current_stock_trades >= max_trades_stock:
+                                continue
+                            
+                            stock['sector'] = sector['name']
+                            stocks_to_scan.append(stock)
     
                 if BOT_STATE["total_trades_today"] >= max_trades_day:
                     time.sleep(60)
@@ -1016,8 +1044,15 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                 
                 # BROADCAST END of Cycle
                 broadcast_state()
-                logger.info(f"Cycle Complete. Sleeping...")
-                time.sleep(check_interval)
+                
+                # Dynamic Interval: Market Movers need faster updates
+                effective_interval = config_manager.get("general", "check_interval") or 300
+                if strategy_mode == "MARKET_MOVER":
+                    effective_interval = 60 # 1 minute for fast-moving ranks
+                    logger.info(f"⚡ Market Mode: Using faster scan interval (60s).")
+                
+                logger.info(f"Cycle Complete. Sleeping {effective_interval}s...")
+                time.sleep(effective_interval)
     
             except KeyboardInterrupt:
                 break

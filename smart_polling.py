@@ -78,8 +78,14 @@ class OrderUpdatePoller:
         # But unrelated to positions, we might just log it for now.
         
         # If status is TRADED (Filled), likely an entry or exit.
-        if status == "TRADED" or status == "FILLED":
+        if status in ["TRADED", "FILLED"]:
              logger.info(f"✅ Order FILLED: {symbol} | {data.get('transactionType')} | Qty: {data.get('quantity')}")
+        
+        elif status == "REJECTED":
+             logger.error(f"❌ Order REJECTED: {symbol} | Reason: {data.get('reasonDescription') or data.get('remarks')}")
+             
+        elif status == "CANCELLED":
+             logger.warning(f"⚠️ Order CANCELLED: {symbol}")
 
     def stop(self):
         self.is_running = False

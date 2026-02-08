@@ -20,7 +20,8 @@ DEFAULT_CONFIG = {
     "general": {
         "quantity": 1,
         "check_interval": 300,       # 5 minutes
-        "dry_run": True
+        "dry_run": True,
+        "strategy_mode": "SECTOR_MOMENTUM" # Options: SECTOR_MOMENTUM, MARKET_MOVER
     },
     "position_sizing": {
         "mode": "dynamic",

@@ -13,7 +13,7 @@ export default function SettingsPage() {
         risk: { stop_loss_pct: 0.01, target_pct: 0.02, trail_be_trigger: 0.012 },
         position_sizing: { mode: 'dynamic', risk_per_trade_pct: 1.0, max_position_size_pct: 20.0, min_sl_distance_pct: 0.6, paper_trading_balance: 100000 },
         limits: { max_trades_per_day: 3, max_trades_per_stock: 2, trading_end_time: "14:45", trading_start_time: "09:30" },
-        general: { quantity: 1, check_interval: 300, dry_run: true },
+        general: { quantity: 1, check_interval: 300, dry_run: true, strategy_mode: "SECTOR_MOMENTUM" },
         credentials: { dhan_client_id: "", dhan_access_token: "" }
     });
 
@@ -63,7 +63,8 @@ export default function SettingsPage() {
                 general: {
                     quantity: parseInt(config.general.quantity as any) || 1,
                     check_interval: 300,
-                    dry_run: config.general.dry_run
+                    dry_run: config.general.dry_run,
+                    strategy_mode: config.general.strategy_mode || "SECTOR_MOMENTUM"
                 },
                 credentials: {
                     dhan_client_id: config.credentials?.dhan_client_id || "",
@@ -179,6 +180,26 @@ export default function SettingsPage() {
                                     {config.general.dry_run ? 'ACTIVE' : 'DISABLED'}
                                 </button>
                             </div>
+
+                            {/* Strategy Mode Selection */}
+                            <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-4">
+                                <label className="block text-xs font-bold text-purple-400 mb-2 uppercase tracking-wider">
+                                    Strategy Mode
+                                </label>
+                                <select
+                                    value={config.general.strategy_mode || "SECTOR_MOMENTUM"}
+                                    onChange={(e) => handleChange('general', 'strategy_mode', e.target.value)}
+                                    className="w-full bg-black/40 border border-white/10 rounded-lg p-3 text-purple-300 focus:border-purple-500 outline-none transition-all"
+                                >
+                                    <option value="SECTOR_MOMENTUM">Sector Momentum (Top Sectors)</option>
+                                    <option value="MARKET_MOVER">Market Movers (Top Gainers)</option>
+                                </select>
+                                <p className="text-[10px] text-gray-500 mt-2">
+                                    {config.general.strategy_mode === 'MARKET_MOVER'
+                                        ? "Scans 'Total Market Gainers' from BrkPoint API."
+                                        : "Scans top performing sectors and their constituents."}
+                                </p>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -280,10 +301,10 @@ export default function SettingsPage() {
                         </div>
                     </div>
                 </div>
-            </div>
+            </div >
 
             {/* Position Sizing - Full Width */}
-            <div className="bg-gradient-to-br from-green-500/10 to-blue-500/10 border border-green-500/30 rounded-xl p-6">
+            < div className="bg-gradient-to-br from-green-500/10 to-blue-500/10 border border-green-500/30 rounded-xl p-6" >
                 <h3 className="text-xl font-bold mb-4 text-green-400 flex items-center gap-2">
                     💰 Position Sizing
                     <span className="text-xs bg-green-500/20 text-green-300 px-2 py-1 rounded">NEW</span>
@@ -303,101 +324,105 @@ export default function SettingsPage() {
                     </button>
                 </div>
 
-                {config.position_sizing.mode === 'dynamic' && (
-                    <div className="space-y-6">
-                        {/* Risk Per Trade */}
-                        <div>
-                            <label className="block text-sm text-gray-400 mb-2">
-                                Risk Per Trade: <span className="text-green-400 font-bold">{config.position_sizing.risk_per_trade_pct}%</span>
-                            </label>
-                            <input
-                                type="range"
-                                min="0.5"
-                                max="2"
-                                step="0.1"
-                                value={config.position_sizing.risk_per_trade_pct}
-                                onChange={(e) => handleChange('position_sizing', 'risk_per_trade_pct', parseFloat(e.target.value))}
-                                className="w-full h-2 bg-black/40 rounded-lg appearance-none cursor-pointer accent-green-500"
-                            />
-                            <div className="flex justify-between text-xs text-gray-600 mt-1">
-                                <span>0.5% (Conservative)</span>
-                                <span>2% (Aggressive)</span>
+                {
+                    config.position_sizing.mode === 'dynamic' && (
+                        <div className="space-y-6">
+                            {/* Risk Per Trade */}
+                            <div>
+                                <label className="block text-sm text-gray-400 mb-2">
+                                    Risk Per Trade: <span className="text-green-400 font-bold">{config.position_sizing.risk_per_trade_pct}%</span>
+                                </label>
+                                <input
+                                    type="range"
+                                    min="0.5"
+                                    max="2"
+                                    step="0.1"
+                                    value={config.position_sizing.risk_per_trade_pct}
+                                    onChange={(e) => handleChange('position_sizing', 'risk_per_trade_pct', parseFloat(e.target.value))}
+                                    className="w-full h-2 bg-black/40 rounded-lg appearance-none cursor-pointer accent-green-500"
+                                />
+                                <div className="flex justify-between text-xs text-gray-600 mt-1">
+                                    <span>0.5% (Conservative)</span>
+                                    <span>2% (Aggressive)</span>
+                                </div>
+                            </div>
+
+                            {/* Max Position Size */}
+                            <div>
+                                <label className="block text-sm text-gray-400 mb-2">
+                                    Max Position Size: <span className="text-blue-400 font-bold">{config.position_sizing.max_position_size_pct}%</span>
+                                </label>
+                                <input
+                                    type="range"
+                                    min="10"
+                                    max="30"
+                                    step="5"
+                                    value={config.position_sizing.max_position_size_pct}
+                                    onChange={(e) => handleChange('position_sizing', 'max_position_size_pct', parseFloat(e.target.value))}
+                                    className="w-full h-2 bg-black/40 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                                />
+                                <div className="flex justify-between text-xs text-gray-600 mt-1">
+                                    <span>10%</span>
+                                    <span>30%</span>
+                                </div>
+                            </div>
+
+                            {/* Paper Trading Balance */}
+                            <div>
+                                <label className="block text-sm text-gray-400 mb-2">Paper Trading Balance (₹)</label>
+                                <input
+                                    type="number"
+                                    step="10000"
+                                    value={config.position_sizing.paper_trading_balance}
+                                    onChange={(e) => handleChange('position_sizing', 'paper_trading_balance', parseInt(e.target.value) || 100000)}
+                                    className="w-full bg-black/40 border border-white/10 rounded-lg p-3 focus:border-green-500 outline-none"
+                                    placeholder="100000"
+                                />
+                                <p className="text-xs text-gray-600 mt-1">Only used when Dry Run mode is enabled</p>
+                            </div>
+
+                            {/* Live Preview */}
+                            <div className="bg-black/40 border border-green-500/30 rounded-lg p-4">
+                                <h4 className="text-sm font-bold text-green-400 mb-2">📊 Live Preview</h4>
+                                <div className="text-xs text-gray-400 space-y-1">
+                                    {(() => {
+                                        const balance = config.position_sizing.paper_trading_balance;
+                                        const riskPct = config.position_sizing.risk_per_trade_pct;
+                                        const exampleEntry = 500;
+                                        const exampleSL = 490;
+                                        const slDist = exampleEntry - exampleSL;
+                                        const riskAmount = (balance * riskPct) / 100;
+                                        const qty = Math.floor(riskAmount / slDist);
+                                        const exposure = qty * exampleEntry;
+                                        const exposurePct = (exposure / balance) * 100;
+
+                                        return (
+                                            <>
+                                                <p>Example: ₹{exampleEntry} entry, ₹{exampleSL} SL ({((slDist / exampleEntry) * 100).toFixed(1)}%)</p>
+                                                <p>Risk Amount: <span className="text-green-400 font-mono">₹{riskAmount.toLocaleString()}</span></p>
+                                                <p>Quantity: <span className="text-blue-400 font-mono font-bold">{qty} shares</span></p>
+                                                <p>Exposure: <span className="text-orange-400 font-mono">₹{exposure.toLocaleString()} ({exposurePct.toFixed(1)}%)</span></p>
+                                                <p className="text-green-300 mt-2">✅ Actual Risk: ₹{(qty * slDist).toLocaleString()} ({((qty * slDist / balance) * 100).toFixed(2)}%)</p>
+                                            </>
+                                        );
+                                    })()}
+                                </div>
                             </div>
                         </div>
+                    )
+                }
 
-                        {/* Max Position Size */}
-                        <div>
-                            <label className="block text-sm text-gray-400 mb-2">
-                                Max Position Size: <span className="text-blue-400 font-bold">{config.position_sizing.max_position_size_pct}%</span>
-                            </label>
-                            <input
-                                type="range"
-                                min="10"
-                                max="30"
-                                step="5"
-                                value={config.position_sizing.max_position_size_pct}
-                                onChange={(e) => handleChange('position_sizing', 'max_position_size_pct', parseFloat(e.target.value))}
-                                className="w-full h-2 bg-black/40 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                            />
-                            <div className="flex justify-between text-xs text-gray-600 mt-1">
-                                <span>10%</span>
-                                <span>30%</span>
-                            </div>
+                {
+                    config.position_sizing.mode === 'fixed' && (
+                        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4">
+                            <p className="text-sm text-yellow-400">
+                                ⚠️ Fixed mode: Using quantity from General Settings ({config.general.quantity} shares per trade)
+                            </p>
                         </div>
+                    )
+                }
+            </div >
 
-                        {/* Paper Trading Balance */}
-                        <div>
-                            <label className="block text-sm text-gray-400 mb-2">Paper Trading Balance (₹)</label>
-                            <input
-                                type="number"
-                                step="10000"
-                                value={config.position_sizing.paper_trading_balance}
-                                onChange={(e) => handleChange('position_sizing', 'paper_trading_balance', parseInt(e.target.value) || 100000)}
-                                className="w-full bg-black/40 border border-white/10 rounded-lg p-3 focus:border-green-500 outline-none"
-                                placeholder="100000"
-                            />
-                            <p className="text-xs text-gray-600 mt-1">Only used when Dry Run mode is enabled</p>
-                        </div>
-
-                        {/* Live Preview */}
-                        <div className="bg-black/40 border border-green-500/30 rounded-lg p-4">
-                            <h4 className="text-sm font-bold text-green-400 mb-2">📊 Live Preview</h4>
-                            <div className="text-xs text-gray-400 space-y-1">
-                                {(() => {
-                                    const balance = config.position_sizing.paper_trading_balance;
-                                    const riskPct = config.position_sizing.risk_per_trade_pct;
-                                    const exampleEntry = 500;
-                                    const exampleSL = 490;
-                                    const slDist = exampleEntry - exampleSL;
-                                    const riskAmount = (balance * riskPct) / 100;
-                                    const qty = Math.floor(riskAmount / slDist);
-                                    const exposure = qty * exampleEntry;
-                                    const exposurePct = (exposure / balance) * 100;
-
-                                    return (
-                                        <>
-                                            <p>Example: ₹{exampleEntry} entry, ₹{exampleSL} SL ({((slDist / exampleEntry) * 100).toFixed(1)}%)</p>
-                                            <p>Risk Amount: <span className="text-green-400 font-mono">₹{riskAmount.toLocaleString()}</span></p>
-                                            <p>Quantity: <span className="text-blue-400 font-mono font-bold">{qty} shares</span></p>
-                                            <p>Exposure: <span className="text-orange-400 font-mono">₹{exposure.toLocaleString()} ({exposurePct.toFixed(1)}%)</span></p>
-                                            <p className="text-green-300 mt-2">✅ Actual Risk: ₹{(qty * slDist).toLocaleString()} ({((qty * slDist / balance) * 100).toFixed(2)}%)</p>
-                                        </>
-                                    );
-                                })()}
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {config.position_sizing.mode === 'fixed' && (
-                    <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4">
-                        <p className="text-sm text-yellow-400">
-                            ⚠️ Fixed mode: Using quantity from General Settings ({config.general.quantity} shares per trade)
-                        </p>
-                    </div>
-                )}
-            </div>
-
-        </div>
+        </div >
     );
 }

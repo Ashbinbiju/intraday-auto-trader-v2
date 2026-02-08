@@ -14,7 +14,7 @@
     "general": {
         "quantity": 1,
         "check_interval": 300,
-        "dry_run": true
+        "dry_run": false
     },
     "position_sizing": {
         "mode": "dynamic",
