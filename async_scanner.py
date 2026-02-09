@@ -56,7 +56,7 @@ class AsyncScanner:
                 token, 
                 symbol, 
                 "FIFTEEN_MINUTE",
-                5, 3, 1
+                5
             )
             
             # Fetch 5M for precise entry signal
@@ -67,7 +67,7 @@ class AsyncScanner:
                 token, 
                 symbol, 
                 "FIVE_MINUTE",
-                5, 3, 1
+                5
             )
             
             if df_15m is not None and df_5m is not None:
