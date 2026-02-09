@@ -5,7 +5,7 @@ import asyncio
 import pandas as pd
 import threading # Added for log_trade_to_db
 from scraper import fetch_top_performing_sectors, fetch_stocks_in_sector, fetch_market_indices
-from dhan_api_helper import get_dhan_session, load_dhan_instrument_map, fetch_candle_data, fetch_ltp, fetch_net_positions, place_order_api, fetch_holdings, verify_order_status
+from dhan_api_helper import get_dhan_session, load_dhan_instrument_map, fetch_candle_data, fetch_ltp, fetch_net_positions, place_order_api, fetch_holdings, verify_order_status, fetch_market_feed_bulk
 from indicators import calculate_indicators, check_buy_condition
 from utils import is_market_open, get_ist_now
 from config import config_manager
@@ -400,6 +400,22 @@ def manage_positions(smartApi, token_map):
 
     square_off_time = config_manager.get("limits", "square_off_time") or "14:45"
 
+    # --- BULK FETCH START ---
+    live_prices = {}
+    try:
+        bulk_tokens = []
+        for s in active_symbols:
+            t = token_map.get(s)
+            if t:
+                bulk_tokens.append(t)
+        
+        if bulk_tokens:
+            live_prices = fetch_market_feed_bulk(smartApi, bulk_tokens)
+            logger.info(f"Fetched live prices for {len(bulk_tokens)} tokens.")
+    except Exception as e:
+        logger.error(f"Bulk fetch error: {e}")
+    # --- BULK FETCH END ---
+
     for symbol in active_symbols:
         token = token_map.get(symbol)
         
@@ -439,18 +455,17 @@ def manage_positions(smartApi, token_map):
                         save_state(BOT_STATE)
                 continue
 
-            # THROTTLING: Limit to 5 requests/second (Limit is 10/s)
-            time.sleep(0.2)
-            
-            # FIX: Use fetch_ltp helper (Dhan doesn't have ltpData method)
-            # FIX: Remove -EQ suffix (Dhan uses SecurityID or raw symbol)
-            current_ltp = fetch_ltp(smartApi, token, symbol)
-            
-            if current_ltp is not None:
-                # data['data']['ltp'] access removed because fetch_ltp returns float directly
-                pass 
+            # Current LTP Logic (Bulk or Fallback)
+            if str(token) in live_prices:
+                current_ltp = live_prices[str(token)]
             else:
-                logger.warning(f"Could not fetch LTP for {symbol}")
+                # Fallback to single fetch if missed in bulk (unlikely but safe)
+                # THROTTLING: Limit to 1 request/second if falling back
+                time.sleep(1.0) 
+                current_ltp = fetch_ltp(smartApi, token, symbol)
+            
+            if current_ltp is None:
+                logger.warning(f"Could not fetch LTP for {symbol} (Bulk & Single failed)")
                 continue
 
             # ... (Rest of existing logic) ...

@@ -218,6 +218,39 @@ def fetch_ltp(dhan, token, symbol):
          logger.warning(f"Error fetching LTP {symbol}: {e}")
          return None
 
+def fetch_market_feed_bulk(dhan, tokens):
+    """
+    Fetches LTP for multiple tokens in a SINGLE API call.
+    Returns: { str(token): float(ltp) }
+    """
+    if not tokens:
+        return {}
+        
+    try:
+        # Dhan expects string tokens
+        securities = {
+            "NSE_EQ": [str(t) for t in tokens]
+        }
+        
+        resp = dhan.ticker_data(securities)
+        
+        result = {}
+        if resp['status'] == 'success' and resp.get('data'):
+             data = resp['data']
+             nse_data = data.get('NSE_EQ', [])
+             
+             for item in nse_data:
+                 # securityId is the token
+                 token_id = str(item.get('securityId'))
+                 ltp = float(item.get('lastPrice', 0.0))
+                 result[token_id] = ltp
+                 
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error in Bulk LTP Fetch: {e}")
+        return {}
+
 def fetch_net_positions(dhan):
     """
     Fetches Open Positions and normalizes keys for Bot compatibility.
