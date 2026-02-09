@@ -187,39 +187,33 @@ def fetch_candle_data(dhan, token, symbol, interval="FIFTEEN_MINUTE", days=5):
 
 def fetch_ltp(dhan, token, symbol):
     """
-    Fetches the Last Traded Price (LTP) using intraday charts.
-    DhanHQ lib doesn't have a direct LTP/Quote method, so we use recent candle data.
+    Fetches the Last Traded Price (LTP) using 'ticker_data' (Market Feed).
+    This is the lightweight and correct way to get real-time prices.
     """
     try:
-        # Fetch last 1 day (or even today) to get latest candle
-        # We reuse the logic from fetch_candle_data but lighter
-        to_date = datetime.now().strftime("%Y-%m-%d")
-        from_date = to_date # Same day
+        # Prepare Payload: keys are exchange segments, values are lists of security IDs
+        # token is usually string, ensure it's compliant
+        securities = {
+            "NSE_EQ": [str(token)] 
+        }
         
-        # If market is closed/pre-open, might need previous day? 
-        # But for 'current price' during trading day, today is fine.
-        
-        resp = dhan.intraday_minute_data(
-            security_id=str(token),
-            exchange_segment=dhanhq.NSE,
-            instrument_type='EQUITY',
-            from_date=from_date,
-            to_date=to_date
-        )
+        resp = dhan.ticker_data(securities)
         
         if resp['status'] == 'success' and resp.get('data'):
+             # Response format: {'NSE_EQ': [{'tradingSymbol': '...', 'lastPrice': 345.5, ...}]}
              data = resp['data']
-             # Data is usually list of lists or dict of lists. 
-             # Based on fetch_candle_data, it seems to be dict of lists: {'close': [...], ...}
-             closes = data.get('close')
-             if closes and len(closes) > 0:
-                 return float(closes[-1])
+             nse_data = data.get('NSE_EQ', [])
+             
+             for item in nse_data:
+                 # Check if token matches (sometimes response includes others if bulk)
+                 # But here we asked for one.
+                 return float(item.get('lastPrice', 0.0))
                  
-        # Fallback: Check if we can use get_positions if we hold it? No, generic LTP needed.
         return None
         
     except Exception as e:
-         logger.error(f"Error fetching LTP {symbol}: {e}")
+         # Reduce log noise for common fetch errors
+         logger.warning(f"Error fetching LTP {symbol}: {e}")
          return None
 
 def fetch_net_positions(dhan):
