@@ -26,6 +26,22 @@ export default function TradesPage() {
         }
     }, [wsData]);
 
+    // Fetch initial state via REST to avoid "Resume Trading" flash
+    useEffect(() => {
+        const fetchInitialState = async () => {
+            try {
+                const baseUrl = getBaseUrl();
+                const res = await axios.get(`${baseUrl}/data`);
+                if (res.data) {
+                    setLocalData(prev => ({ ...prev, ...res.data }));
+                }
+            } catch (err) {
+                console.error("Failed to fetch initial state:", err);
+            }
+        };
+        fetchInitialState();
+    }, []);
+
     const handleManualExit = async (symbol: string) => {
         if (!confirm(`Are you sure you want to FORCE EXIT ${symbol}?`)) return;
         setProcessing(symbol);
