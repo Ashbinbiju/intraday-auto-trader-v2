@@ -404,15 +404,22 @@ def manage_positions(smartApi, token_map):
     live_prices = {}
     try:
         bulk_tokens = []
+        # logger.info(f"Active Symbols: {active_symbols}") # DEBUG
+        # logger.info(f"Token Map Sample: {list(token_map.keys())[:5]}") # DEBUG
+        
         for s in active_symbols:
             t = token_map.get(s)
             if t:
                 bulk_tokens.append(t)
+            else:
+                logger.warning(f"❌ Token MISSING for {s}")
         
         if bulk_tokens:
             live_prices = fetch_market_feed_bulk(smartApi, bulk_tokens)
             # logger.info(f"Fetched live prices for {len(bulk_tokens)} tokens.")
             logger.info(f"LIVE PRICES: {live_prices}") # DEBUG: Print prices to see if they move
+        else:
+            logger.warning("⚠️ No tokens found for bulk fetch!")
     except Exception as e:
         logger.error(f"Bulk fetch error: {e}")
     # --- BULK FETCH END ---
