@@ -281,6 +281,9 @@ def fetch_market_feed_bulk(dhan, tokens):
                  token_id = str(item.get('securityId'))
                  ltp = float(item.get('lastPrice', 0.0))
                  result[token_id] = ltp
+                 
+             if not result:
+                 logger.warning(f"⚠️ Bulk Fetch Success but Result Empty. Raw Data: {data}")
         else:
              logger.warning(f"Bulk Fetch Failed. Payload: {securities} | Response: {resp}")
                  
