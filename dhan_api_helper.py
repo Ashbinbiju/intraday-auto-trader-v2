@@ -32,47 +32,69 @@ def check_connection(dhan):
     Checks if the session is valid using `get_fund_limits`.
     Returns: (bool, reason)
     """
-    try:
-        # Use Fund Limits for validation (Fast & Vital)
-        resp = dhan.get_fund_limits()
-        
-        status = resp.get('status', '').lower()
-        if status == 'success':
-            return True, "OK"
-        
-        # ERROR HANDLING / AUDIT
-        remarks = str(resp) # Capture full response for debugging
-        
-        # Check against Known Error Codes (from Audit)
-        if "DH-901" in remarks or "DH-902" in remarks or "not authorized" in remarks.lower():
-            return False, "TOKEN_EXPIRED"
-        
-        if "DH-904" in remarks:
-            return False, "RATE_LIMIT_EXCEEDED"
+    for attempt in range(2): # Retry once on failure
+        try:
+            # Use Fund Limits for validation (Fast & Vital)
+            resp = dhan.get_fund_limits()
             
-        return False, f"API_ERROR: {remarks}"
-        
-    except Exception as e:
-        return False, f"EXCEPTION: {e}"
+            status = resp.get('status', '').lower()
+            if status == 'success':
+                return True, "OK"
+            
+            # ERROR HANDLING / AUDIT
+            remarks = str(resp) # Capture full response for debugging
+
+            # RETRY on Transient Network Errors (detected in remarks)
+            if "RemoteDisconnected" in remarks or "Connection aborted" in remarks:
+                 if attempt == 0:
+                     time.sleep(1)
+                     continue # Retry!
+            
+            # Check against Known Error Codes (from Audit)
+            if "DH-901" in remarks or "DH-902" in remarks or "not authorized" in remarks.lower():
+                return False, "TOKEN_EXPIRED"
+            
+            if "DH-904" in remarks:
+                return False, "RATE_LIMIT_EXCEEDED"
+                
+            return False, f"API_ERROR: {remarks}"
+            
+        except Exception as e:
+            # If it's the last attempt, fail
+            if attempt == 1:
+                return False, f"EXCEPTION: {e}"
+            # Otherwise, wait and retry (transient network issue)
+            time.sleep(1)
 
 def get_available_margin(dhan):
     """
     Fetches available cash margin for Equity Intraday.
     """
-    try:
-        resp = dhan.get_fund_limits()
-        if resp['status'] == 'success':
-            # Dhan response: {'data': {'availabelBalance': 1000.0, ...}} 
-            # Note typo 'availabelBalance' in some versions, check both
-            data = resp.get('data', {})
-            balance = data.get('availableBalance') or data.get('availabelBalance') or 0.0
-            return float(balance)
-        else:
-            logger.warning(f"Failed to fetch funds: {resp}")
-            return 0.0
-    except Exception as e:
-        logger.error(f"Error fetching funds: {e}")
-        return 0.0
+    for attempt in range(2):
+        try:
+            resp = dhan.get_fund_limits()
+            if resp['status'] == 'success':
+                # Dhan response: {'data': {'availabelBalance': 1000.0, ...}} 
+                # Note typo 'availabelBalance' in some versions, check both
+                data = resp.get('data', {})
+                balance = data.get('availableBalance') or data.get('availabelBalance') or 0.0
+                return float(balance)
+            else:
+                # Retry on network error
+                remarks = str(resp)
+                if "RemoteDisconnected" in remarks or "Connection aborted" in remarks:
+                    if attempt == 0:
+                        time.sleep(1)
+                        continue
+                
+                logger.warning(f"Failed to fetch funds: {resp}")
+                return 0.0
+        except Exception as e:
+            if attempt == 1:
+                logger.error(f"Error fetching funds: {e}")
+                return 0.0
+            time.sleep(1)
+    return 0.0
 
 def load_dhan_instrument_map():
     """

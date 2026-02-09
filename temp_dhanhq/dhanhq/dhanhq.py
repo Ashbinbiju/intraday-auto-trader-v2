@@ -719,10 +719,15 @@ class dhanhq:
             response = self.session.get(url, headers=self.header, timeout=self.timeout)
             return self._parse_response(response)
         except Exception as e:
-            logging.error('Exception in dhanhq>>get_fund_limits: %s', e)
+            msg = str(e)
+            if "RemoteDisconnected" in msg or "Connection aborted" in msg:
+                 logging.warning('Warning in dhanhq>>get_fund_limits (Network): %s', e)
+            else:
+                 logging.error('Exception in dhanhq>>get_fund_limits: %s', e)
+            
             return {
                 'status': 'failure',
-                'remarks': str(e),
+                'remarks': msg,
                 'data': '',
             }
         
