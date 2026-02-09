@@ -274,6 +274,12 @@ def fetch_market_feed_bulk(dhan, tokens):
         result = {}
         if resp['status'] == 'success' and resp.get('data'):
              data = resp['data']
+             
+             # Patch: Unwrap nested 'data' if present (Observed in logs: data={'data': {...}, 'status': 'success'})
+             if isinstance(data, dict) and 'data' in data and 'NSE_EQ' not in data:
+                 logger.info("DEBUG: Unwrapping nested 'data' key from response.")
+                 data = data['data']
+                 
              nse_data = data.get('NSE_EQ', {})
              
              # DEBUG: Aggressive type checking
