@@ -145,7 +145,7 @@ def toggle_trading():
         save_state(BOT_STATE)
     return {"status": "success", "is_trading_allowed": BOT_STATE["is_trading_allowed"]}
 
-@app.post("/close/{symbol}")
+@app.post("/trade/close/{symbol}")
 def close_position(symbol: str):
     with state_lock:
         if symbol not in BOT_STATE["positions"]:
