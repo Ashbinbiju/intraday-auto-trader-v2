@@ -663,6 +663,9 @@ def run_bot_loop(async_loop=None, ws_manager=None):
     def broadcast_state():
         if async_loop and ws_manager:
             try:
+                # Inject Heartbeat for Frontend Debugging
+                BOT_STATE["last_heartbeat"] = time.time()
+                
                 # logger.info("Broadcasting State Update...") 
                 future = asyncio.run_coroutine_threadsafe(ws_manager.broadcast(BOT_STATE), async_loop)
                 

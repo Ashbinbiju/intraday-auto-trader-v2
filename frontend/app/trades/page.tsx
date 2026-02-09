@@ -86,7 +86,15 @@ export default function TradesPage() {
                         Position Manager
                         {isConnected ? <Wifi className="text-green-500 animate-pulse" size={20} /> : <WifiOff className="text-red-500" size={20} />}
                     </h1>
-                    <p className="text-gray-400">Real-Time WebSocket Feed</p>
+                    <p className="text-gray-400">
+                        Real-Time WebSocket Feed
+                        {/* DEBUG: Heartbeat */}
+                        {displayData.last_heartbeat && (
+                            <span className="text-xs text-gray-500 ml-2">
+                                (Last Update: {new Date(displayData.last_heartbeat * 1000).toLocaleTimeString()})
+                            </span>
+                        )}
+                    </p>
                 </div>
 
                 <button
