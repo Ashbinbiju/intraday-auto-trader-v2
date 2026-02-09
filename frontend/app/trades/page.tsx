@@ -73,7 +73,7 @@ export default function TradesPage() {
     if (!localData && !isConnected) return <div className="p-10 text-center text-gray-400 animate-pulse">Connecting to Live Feed...</div>;
 
     // Fallback if connected but no data yet (rare)
-    const displayData = localData || { is_trading_allowed: false, positions: {} };
+    const displayData: MarketData = localData || { is_trading_allowed: false, positions: {}, signals: [], last_heartbeat: 0 };
 
     const positions = displayData.positions ? Object.entries(displayData.positions).filter(([, p]) => p.status === "OPEN") : [];
 
