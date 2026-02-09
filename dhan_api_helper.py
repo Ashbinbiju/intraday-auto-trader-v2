@@ -355,6 +355,9 @@ def place_order_api(dhan, params):
     Places order with pre-trade checks.
     """
     try:
+        # Rate Limit Check
+        api_rate_limiter.wait()
+        
         # AUDIT: FUNDS CHECK
         # We should ideally check funds here, but speed is key.
         # Assume 'check_connection' or main loop logic verified balance roughly.

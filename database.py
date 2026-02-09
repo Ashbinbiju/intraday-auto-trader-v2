@@ -76,6 +76,12 @@ def log_trade_to_db(trade_data):
     """Logs a completed trade to the trade_history table."""
     if not supabase: return
     try:
+        # Validate and Format format 'entry_time' (which might be just HH:MM)
+        entry_time = trade_data.get("entry_time")
+        if entry_time and len(str(entry_time)) <= 8: # Likely "10:51" or "10:51:00"
+             today_date = datetime.now().date().isoformat()
+             entry_time = f"{today_date}T{entry_time}:00"
+             
         # Map fields to match SQL schema
         record = {
             "symbol": trade_data.get("symbol"),
@@ -84,7 +90,7 @@ def log_trade_to_db(trade_data):
             "qty": trade_data.get("qty"),
             "pnl": trade_data.get("pnl"),
             "status": trade_data.get("status", "CLOSED"),
-            "entry_time": trade_data.get("entry_time"), # Ensure ISO format or compatible
+            "entry_time": entry_time, # Now guaranteed to be ISO-ish
             "exit_time": trade_data.get("exit_time"),
             "metadata": json.dumps(trade_data) # Store raw extra data
         }
