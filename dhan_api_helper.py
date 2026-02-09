@@ -11,6 +11,25 @@ logger = logging.getLogger(__name__)
 DHAN_CLIENT_ID = config_manager.get("credentials", "dhan_client_id") or ""
 DHAN_ACCESS_TOKEN = config_manager.get("credentials", "dhan_access_token") or ""
 
+# --- RATE LIMITER ---
+class RateLimiter:
+    def __init__(self, calls_per_second=2):
+        self.interval = 1.0 / calls_per_second
+        self.last_call = 0
+        self.lock = logging.Threading.Lock() if hasattr(logging, 'Threading') else logging.threading.Lock()
+
+    def wait(self):
+        with self.lock:
+            now = time.time()
+            elapsed = now - self.last_call
+            if elapsed < self.interval:
+                time.sleep(self.interval - elapsed)
+            self.last_call = time.time()
+
+# Global Limiter (2 req/s safe for 10/s limit)
+# We share this across all threads to prevent burst overlaps.
+api_rate_limiter = RateLimiter(calls_per_second=2)
+
 def get_dhan_session():
     """
     Initializes and returns a DhanHQ session object.
@@ -226,6 +245,9 @@ def fetch_market_feed_bulk(dhan, tokens):
     if not tokens:
         return {}
         
+    # Wait for rate limit slot
+    api_rate_limiter.wait()
+    
     try:
         # Dhan expects string tokens? Or Integers?
         # Error 814 "Invalid Request" suggests format issue.
@@ -344,6 +366,9 @@ def fetch_order_list(dhan):
     Fetches all orders for the day.
     Returns list of order dictionaries.
     """
+    # Wait for rate limit slot
+    api_rate_limiter.wait()
+    
     try:
         resp = dhan.get_order_list()
         if resp['status'] == 'success':
