@@ -355,7 +355,7 @@ export default function SettingsPage() {
                                 <input
                                     type="range"
                                     min="10"
-                                    max="30"
+                                    max="100"
                                     step="5"
                                     value={config.position_sizing.max_position_size_pct}
                                     onChange={(e) => handleChange('position_sizing', 'max_position_size_pct', parseFloat(e.target.value))}
@@ -363,7 +363,7 @@ export default function SettingsPage() {
                                 />
                                 <div className="flex justify-between text-xs text-gray-600 mt-1">
                                     <span>10%</span>
-                                    <span>30%</span>
+                                    <span>100%</span>
                                 </div>
                             </div>
 
