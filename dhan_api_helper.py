@@ -186,15 +186,38 @@ def fetch_candle_data(dhan, token, symbol, interval="FIFTEEN_MINUTE", days=5):
         return None
 
 def fetch_ltp(dhan, token, symbol):
+    """
+    Fetches the Last Traded Price (LTP) using intraday charts.
+    DhanHQ lib doesn't have a direct LTP/Quote method, so we use recent candle data.
+    """
     try:
-        resp = dhan.get_ltp_data(
+        # Fetch last 1 day (or even today) to get latest candle
+        # We reuse the logic from fetch_candle_data but lighter
+        to_date = datetime.now().strftime("%Y-%m-%d")
+        from_date = to_date # Same day
+        
+        # If market is closed/pre-open, might need previous day? 
+        # But for 'current price' during trading day, today is fine.
+        
+        resp = dhan.intraday_minute_data(
             security_id=str(token),
             exchange_segment=dhanhq.NSE,
-            instrument_type='EQUITY'
+            instrument_type='EQUITY',
+            from_date=from_date,
+            to_date=to_date
         )
-        if resp['status'] == 'success':
-            return float(resp['data']['last_price'])
+        
+        if resp['status'] == 'success' and resp.get('data'):
+             data = resp['data']
+             # Data is usually list of lists or dict of lists. 
+             # Based on fetch_candle_data, it seems to be dict of lists: {'close': [...], ...}
+             closes = data.get('close')
+             if closes and len(closes) > 0:
+                 return float(closes[-1])
+                 
+        # Fallback: Check if we can use get_positions if we hold it? No, generic LTP needed.
         return None
+        
     except Exception as e:
          logger.error(f"Error fetching LTP {symbol}: {e}")
          return None
