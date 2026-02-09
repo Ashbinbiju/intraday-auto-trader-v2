@@ -655,6 +655,23 @@ def run_bot_loop(async_loop=None, ws_manager=None):
             except Exception as e:
                 logger.error(f"WS Broadcast Failed: {e}")
 
+    # --- Position Manager Thread ---
+    def run_position_manager(api_session, t_map):
+        logger.info("🚀 Starting Real-Time Position Manager Thread...")
+        while BOT_STATE.get("is_running", True):
+            try:
+                # Run every 5 seconds for fast updates
+                manage_positions(api_session, t_map)
+                
+                # Broadcast updates immediately after management
+                broadcast_state()
+                
+                time.sleep(5) 
+            except Exception as e:
+                logger.error(f"Position Manager Thread Error: {e}")
+                time.sleep(5)
+    # -------------------------------
+
     # ... (SmartAPI Init) ...
     # 1. Initialize Dhan API
     dhan = get_dhan_session()
@@ -674,6 +691,10 @@ def run_bot_loop(async_loop=None, ws_manager=None):
         return
         
     TOKEN_MAP = token_map
+
+    # 3. Start Position Manager Thread
+    pm_thread = threading.Thread(target=run_position_manager, args=(dhan, token_map), daemon=True)
+    pm_thread.start()
 
     try:
         while True:
@@ -735,7 +756,8 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                 # --------------------------
     
                 # --- Manage Active Positions ---
-                manage_positions(smartApi, token_map)
+                # Moved to dedicated thread for real-time updates!
+                # manage_positions(smartApi, token_map)
                 # -------------------------------
                 
                 # BROADCAST AFTER MANAGEMENT (Price updates, exits)
