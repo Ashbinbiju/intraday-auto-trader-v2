@@ -276,12 +276,19 @@ def fetch_market_feed_bulk(dhan, tokens):
              data = resp['data']
              nse_data = data.get('NSE_EQ', {})
              
+             # DEBUG: Aggressive type checking
+             logger.info(f"DEBUG: NSE_EQ Type: {type(nse_data)}")
+             try:
+                 logger.info(f"DEBUG: NSE_EQ Keys: {list(nse_data.keys()) if isinstance(nse_data, dict) else 'Not Dict'}")
+             except: pass
+             
              # Handle Dict Response (e.g. {'1333': {'last_price': 123.45}})
              if isinstance(nse_data, dict):
-                 # logger.info(f"Parsing Dict Data: {list(nse_data.keys())[:5]}") # DEBUG
+                 logger.info("DEBUG: Entered DICT block")
                  for token_id, details in nse_data.items():
                      if isinstance(details, dict):
                          ltp = float(details.get('last_price', details.get('lastPrice', 0.0)))
+                         # logger.info(f"DEBUG: Parsed {token_id} -> {ltp}")
                          result[str(token_id)] = ltp
                      else:
                          logger.warning(f"Expected dict for details, got {type(details)}: {details}")
