@@ -411,7 +411,8 @@ def manage_positions(smartApi, token_map):
         
         if bulk_tokens:
             live_prices = fetch_market_feed_bulk(smartApi, bulk_tokens)
-            logger.info(f"Fetched live prices for {len(bulk_tokens)} tokens.")
+            # logger.info(f"Fetched live prices for {len(bulk_tokens)} tokens.")
+            logger.info(f"LIVE PRICES: {live_prices}") # DEBUG: Print prices to see if they move
     except Exception as e:
         logger.error(f"Bulk fetch error: {e}")
     # --- BULK FETCH END ---
