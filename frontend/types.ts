@@ -22,4 +22,5 @@ export interface MarketData {
     is_trading_allowed: boolean;
     positions: Record<string, Position>;
     signals: Signal[];
+    last_heartbeat?: number;
 }
