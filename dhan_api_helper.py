@@ -274,13 +274,20 @@ def fetch_market_feed_bulk(dhan, tokens):
         result = {}
         if resp['status'] == 'success' and resp.get('data'):
              data = resp['data']
-             nse_data = data.get('NSE_EQ', [])
+             nse_data = data.get('NSE_EQ', {})
              
-             for item in nse_data:
-                 # securityId is the token
-                 token_id = str(item.get('securityId'))
-                 ltp = float(item.get('lastPrice', 0.0))
-                 result[token_id] = ltp
+             # Handle Dict Response (e.g. {'1333': {'last_price': 123.45}})
+             if isinstance(nse_data, dict):
+                 for token_id, details in nse_data.items():
+                     if isinstance(details, dict):
+                         ltp = float(details.get('last_price', details.get('lastPrice', 0.0)))
+                         result[str(token_id)] = ltp
+             # Handle potential List Response (just in case API changes back)
+             elif isinstance(nse_data, list):
+                 for item in nse_data:
+                     token_id = str(item.get('securityId'))
+                     ltp = float(item.get('lastPrice', item.get('last_price', 0.0)))
+                     result[token_id] = ltp
                  
              if not result:
                  logger.warning(f"⚠️ Bulk Fetch Success but Result Empty. Raw Data: {data}")
