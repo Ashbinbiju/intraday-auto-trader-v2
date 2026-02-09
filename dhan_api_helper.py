@@ -285,9 +285,16 @@ def fetch_market_feed_bulk(dhan, tokens):
                          result[str(token_id)] = ltp
                      else:
                          logger.warning(f"Expected dict for details, got {type(details)}: {details}")
-             # Handle potential List Response (just in case API changes back)
-             # Handle potential List Response (just in case API changes back)
+             
+             # Handle potential List Response
              elif isinstance(nse_data, list):
+                 for item in nse_data:
+                     token_id = str(item.get('securityId'))
+                     ltp = float(item.get('lastPrice', item.get('last_price', 0.0)))
+                     result[token_id] = ltp
+             
+             else:
+                 logger.warning(f"Unknown Data Type for NSE_EQ: {type(nse_data)} | Data: {nse_data}")
                  for item in nse_data:
                      token_id = str(item.get('securityId'))
                      ltp = float(item.get('lastPrice', item.get('last_price', 0.0)))
