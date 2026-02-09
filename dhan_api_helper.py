@@ -171,7 +171,7 @@ def fetch_candle_data(dhan, token, symbol, interval="FIFTEEN_MINUTE", days=5):
              # If data is 1-minute (likely), RESAMPLE to desired interval
              df = df.set_index('datetime')
              
-             resample_rule = '15T' if interval == "FIFTEEN_MINUTE" else '5T' if interval == "FIVE_MINUTE" else '1T'
+             resample_rule = '15min' if interval == "FIFTEEN_MINUTE" else '5min' if interval == "FIVE_MINUTE" else '1min'
              ohlc_dict = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}
              
              df_resampled = df.resample(resample_rule).agg(ohlc_dict).dropna()
