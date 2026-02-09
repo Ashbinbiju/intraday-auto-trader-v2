@@ -60,10 +60,14 @@ def is_market_open():
     if weekday == 6: # Sunday
         return False, "Market Closed (Sunday)"
 
-    # 4. Optional: Time Check (Operating Hours 09:15 - 15:30)
-    # We can handle time checks inside the loop or here. 
-    # For now, we return True if it's a valid DAY. 
-    # The main loop checks TRADING_END_TIME separately.
+    # 4. Time Check (Operating Hours 08:45 - 16:00 IST)
+    # We allow early wake-up (08:45) for login/prep before 09:15
+    current_time = now.time()
+    market_start = datetime.time(8, 45)
+    market_end = datetime.time(16, 00)
+    
+    if current_time < market_start or current_time > market_end:
+        return False, f"Market Closed (Time {current_time.strftime('%H:%M')})"
 
     return True, "Market Open"
 
