@@ -208,7 +208,9 @@ def fetch_ltp(dhan, token, symbol):
                  # Check if token matches (sometimes response includes others if bulk)
                  # But here we asked for one.
                  return float(item.get('lastPrice', 0.0))
-                 
+        
+        # Debugging: Log response if data is missing or status failed
+        logger.warning(f"LTP Fetch Failed for {symbol}. Response: {resp}")
         return None
         
     except Exception as e:
