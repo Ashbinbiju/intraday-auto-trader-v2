@@ -72,7 +72,7 @@ def check_connection(dhan):
                      continue # Retry!
             
             # Check against Known Error Codes (from Audit)
-            if "DH-901" in remarks or "DH-902" in remarks or "not authorized" in remarks.lower():
+            if "DH-901" in remarks or "DH-902" in remarks or "DH-906" in remarks or "not authorized" in remarks.lower():
                 return False, "TOKEN_EXPIRED"
             
             if "DH-904" in remarks:
