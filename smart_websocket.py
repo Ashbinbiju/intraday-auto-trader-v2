@@ -1,103 +1,49 @@
 import threading
-import json
 import logging
 import time
-import websocket
-import ssl
-import asyncio  # Fix NameError
+import asyncio
+from dhanhq import DhanContext, OrderUpdate
+from config import config_manager
 
 logger = logging.getLogger("DhanSmartWS")
 
 class OrderUpdateWS:
     def __init__(self, client_id, access_token, bot_state, ws_manager=None):
-        self.url = "wss://api-order-update.dhan.co"
         self.client_id = client_id
         self.access_token = access_token
         self.bot_state = bot_state
         self.ws_manager = ws_manager
-        self.ws = None
         self.is_running = False
         self.thread = None
+        self.dhan_context = None
+        self.order_client = None
 
-    def on_open(self, ws):
-        logger.info("✅ Connected to Dhan WebSocket (Threaded)")
-        
-        # 1. Send Login Request
-        masked_token = self.access_token[:4] + "****" + self.access_token[-4:] if self.access_token else "None"
-        logger.info(f"📤 Sending Auth Packet for Client: {self.client_id} | Token: {masked_token}")
-
-        auth_packet = {
-            "LoginReq": {
-                "MsgCode": 42,
-                "ClientId": str(self.client_id),
-                "Token": str(self.access_token)
-            },
-            "UserType": "SELF"
-        }
-        ws.send(json.dumps(auth_packet))
-
-    def on_message(self, ws, message):
-        """
-        Handles Incoming Messages (Text)
-        """
+    def on_order_update(self, order_data):
+        """Callback function to process order update data"""
         try:
-            # If message is text '2' (sometimes happen)
-            if message == "2":
-                 logger.debug("❤️ Heartbeat received (Text). Sending Pong '3'.")
-                 ws.send("3")
-                 return
-
-            # Parse JSON
-            data = json.loads(message)
-            self.process_message(data)
-
+            # The library returns a dict, likely with "Data" key based on documentation
+            # But the user snippet said: print(order_data["Data"])
+            # Let's handle both cases safely
+            data = order_data.get("Data", order_data)
+            self.handle_order_update(data)
         except Exception as e:
-            logger.error(f"❌ Error processing message: {e}")
+            logger.error(f"❌ Error processing order update: {e}")
 
-    def on_data(self, ws, message, data_type, continue_flag):
-        """
-        Explicit handler for frame data (Text vs Binary).
-        ABNF.OPCODE_BINARY = 0x2
-        ABNF.OPCODE_TEXT = 0x1
-        """
-        if data_type == websocket.ABNF.OPCODE_BINARY:
-            if len(message) > 0 and message[0] == 50: 
-                logger.debug(f"❤️ Binary Heartbeat: {message.hex()}")
-                
-                # Echo the EXACT binary message back
-                logger.info(f"❤️ Echoing Binary Heartbeat: {message.hex()}")
-                ws.send(message, opcode=websocket.ABNF.OPCODE_BINARY)
-                return
-
-        elif data_type == websocket.ABNF.OPCODE_TEXT:
-            # Decode and process
-            try:
-                decoded = message.decode('utf-8')
-                self.on_message(ws, decoded)
-            except Exception as e:
-                logger.error(f"Text Decode Error: {e}")
-
-    def on_error(self, ws, error):
-        logger.error(f"⚠️ WebSocket Error: {error}")
-
-    def on_close(self, ws, close_status_code, close_msg):
-        logger.info(f"🔌 WebSocket Closed. Code: {close_status_code} | Reason: {close_msg}")
-        if close_status_code:
-            logger.warning(f"⚠️ Close Code {close_status_code} usually means: {self.get_close_reason(close_status_code)}")
-
-    def get_close_reason(self, code):
-        reasons = {
-            1000: "Normal Closure",
-            1001: "Going Away",
-            1002: "Protocol Error",
-            1003: "Unsupported Data",
-            1006: "Abnormal Closure (Connection Dropped)",
-            1008: "Policy Violation",
-            1009: "Message Too Big",
-            1011: "Internal Error",
-            4000: "Dhan: Internal or Auth Error?"
-        }
-        return reasons.get(code, "Unknown")
+    def handle_order_update(self, data):
+        """Log order updates similar to the poller"""
+        order_id = data.get("OrderNo") or data.get("orderId")
+        status = data.get("Status") or data.get("orderStatus")
+        symbol = data.get("TradingSymbol") or data.get("tradingSymbol") or data.get("DisplayName")
+        
+        if status in ["TRADED", "FILLED"]:
+             logger.info(f"✅ Order FILLED (WS): {symbol} | ID: {order_id} | Status: {status}")
+        elif status == "REJECTED":
+             reason = data.get("Reason") or data.get("reasonDescription") or "Unknown"
+             logger.error(f"❌ Order REJECTED (WS): {symbol} | Reason: {reason}")
+        elif status == "CANCELLED":
+             logger.warning(f"⚠️ Order CANCELLED (WS): {symbol}")
+        elif status == "PENDING":
+             logger.info(f"⏳ Order PENDING (WS): {symbol} | ID: {order_id}")
 
     async def connect(self):
         """
@@ -106,63 +52,35 @@ class OrderUpdateWS:
         """
         self.is_running = True
         
+        # Initialize Dhan Context
+        try:
+             self.dhan_context = DhanContext(self.client_id, self.access_token)
+             self.order_client = OrderUpdate(self.dhan_context)
+             self.order_client.on_update = self.on_order_update
+        except Exception as e:
+             logger.error(f"❌ Failed to initialize DhanContext: {e}")
+             return
+
         def run_forever():
+            logger.info("🚀 Starting Dhan Order Update WebSocket (Official Lib)...")
             while self.is_running:
                 try:
-                    # Enable trace for debugging if needed
-                    # websocket.enableTrace(True)
-                    self.ws = websocket.WebSocketApp(
-                        self.url,
-                        on_open=self.on_open,
-                        # on_message is handled via on_data for text frames to avoid double processing
-                        on_error=self.on_error,
-                        on_close=self.on_close,
-                        on_data=self.on_data 
-                    )
-                    
-                    self.ws.run_forever(
-                        sslopt={"cert_reqs": ssl.CERT_NONE},
-                        ping_interval=0, # Disable lib's auto-ping, we handle custom pings
-                        ping_timeout=10
-                    )
+                    self.order_client.connect_to_dhan_websocket_sync()
                 except Exception as e:
-                    logger.error(f"WS Run Loop failed: {e}")
-                
-                if self.is_running:
-                    logger.info("Reconnecting in 5s...")
+                    logger.error(f"⚠️ Dhan WebSocket Connection Error: {e}")
+                    logger.info("🔄 Reconnecting in 5s...")
                     time.sleep(5)
 
         self.thread = threading.Thread(target=run_forever, daemon=True)
         self.thread.start()
-        
-        # Async compatibility: just return 
-        # API expects an awaitable, so we create a dummy future if needed or just return
-        # But since the caller uses `await order_ws.connect()`, we need to return a future or be async.
-        # However, since we are spawning a thread, we can just return immediately.
-        # But we need to make this function `async` def for api.py compatibility.
         return
 
     async def connect_async(self):
-        """
-        Async wrapper for connect() to satisfy await in api.py
-        """
-        self.connect()
-        # Return immediately as the thread runs in background
-        return
-
-    def process_message(self, data):
-        msg_type = data.get("Type")
-        if msg_type == "order_alert":
-            self.handle_order_update(data.get("Data", {}))
-
-    def handle_order_update(self, data):
-        order_id = data.get("OrderNo")
-        status = data.get("Status")
-        symbol = data.get("TradingSymbol") or data.get("DisplayName")
-        
-        logger.info(f"🔔 Order Update: {symbol} | ID: {order_id} | Status: {status}")
+        """Alias for compatibility"""
+        await self.connect()
 
     def stop(self):
         self.is_running = False
-        if self.ws:
-            self.ws.close()
+        # The library might not have a clean stop method exposed easily in sync mode 
+        # but setting is_running=False stops the reconnection loop.
+
