@@ -46,7 +46,7 @@ class OrderUpdatePoller:
                     # Re-init session if needed
                     # self.dhan = get_dhan_session()
                 
-                time.sleep(2) # Poll every 2 seconds
+                time.sleep(5) # Poll every 5 seconds (Reduced from 2s to avoid Rate Limits)
 
         self.thread = threading.Thread(target=run_forever, daemon=True)
         self.thread.start()

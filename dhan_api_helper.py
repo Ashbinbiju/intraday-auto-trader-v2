@@ -241,23 +241,7 @@ def fetch_market_feed_bulk(dhan, tokens):
         # ATTEMPT 2: Try sending as integers if strings fail. 
         # Given 814, let's switch to INTEGERS.
         
-        securities = {
-            "NSE_EQ": [str(t) for t in tokens] 
-        }
         
-        # Wait, let's look at error 814 again. 
-        # Maybe "NSE_EQ" key is wrong? No, it's standard.
-        # Maybe it expects "NSE_EQ": [123] (ints)?
-        # Let's try to pass BOTH or just INTs.
-        
-        # Let's try converting to int.
-        # securities = { "NSE_EQ": [int(str(t).split('.')[0]) for t in tokens] } 
-        
-        # Actually, let's stick to what worked for single fetch... oh wait single fetch also failed with 805 then 814.
-        
-        # Let's try this: The library documentation says:
-        # securities = { "NSE_EQ": [11536] } -> Integers in example?
-        # Let's try integers.
         
         securities = {
             "NSE_EQ": [int(float(str(t))) for t in tokens]
@@ -275,6 +259,8 @@ def fetch_market_feed_bulk(dhan, tokens):
                  token_id = str(item.get('securityId'))
                  ltp = float(item.get('lastPrice', 0.0))
                  result[token_id] = ltp
+        else:
+             logger.warning(f"Bulk Fetch Failed. Payload: {securities} | Response: {resp}")
                  
         return result
         

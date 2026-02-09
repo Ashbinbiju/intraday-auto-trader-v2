@@ -455,17 +455,16 @@ def manage_positions(smartApi, token_map):
                         save_state(BOT_STATE)
                 continue
 
-            # Current LTP Logic (Bulk or Fallback)
+            # Current LTP Logic (Bulk Only - No Fallback)
             if str(token) in live_prices:
                 current_ltp = live_prices[str(token)]
             else:
-                # Fallback to single fetch if missed in bulk (unlikely but safe)
-                # THROTTLING: Limit to 1 request/second if falling back
-                time.sleep(1.0) 
-                current_ltp = fetch_ltp(smartApi, token, symbol)
+                # If bulk fetch failed or token missing, SKIP this cycle.
+                # Fallback to single fetch causes 805 Rate Limit spiral.
+                # logger.warning(f"LTP missing in bulk fetch for {symbol}. Skipping update.")
+                continue
             
             if current_ltp is None:
-                logger.warning(f"Could not fetch LTP for {symbol} (Bulk & Single failed)")
                 continue
 
             # ... (Rest of existing logic) ...
