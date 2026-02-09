@@ -227,9 +227,40 @@ def fetch_market_feed_bulk(dhan, tokens):
         return {}
         
     try:
-        # Dhan expects string tokens
+        # Dhan expects string tokens? Or Integers?
+        # Error 814 "Invalid Request" suggests format issue.
+        # Let's try sending as strings first (standard), but if that fails, maybe ints?
+        # Actually, let's try sending them as STRINGS but ensure they are valid.
+        # Wait, if map loaded them as strings '1333', then list is ['1333', ...].
+        # Let's try INTEGERS as some APIs prefer that.
+        
+        # securities = { "NSE_EQ": [11536, 1333] }
+        # Note: token_map stores them as strings.
+        
+        # ATTEMPT 1: Try sending as strings (should be default)
+        # ATTEMPT 2: Try sending as integers if strings fail. 
+        # Given 814, let's switch to INTEGERS.
+        
         securities = {
-            "NSE_EQ": [str(t) for t in tokens]
+            "NSE_EQ": [str(t) for t in tokens] 
+        }
+        
+        # Wait, let's look at error 814 again. 
+        # Maybe "NSE_EQ" key is wrong? No, it's standard.
+        # Maybe it expects "NSE_EQ": [123] (ints)?
+        # Let's try to pass BOTH or just INTs.
+        
+        # Let's try converting to int.
+        # securities = { "NSE_EQ": [int(str(t).split('.')[0]) for t in tokens] } 
+        
+        # Actually, let's stick to what worked for single fetch... oh wait single fetch also failed with 805 then 814.
+        
+        # Let's try this: The library documentation says:
+        # securities = { "NSE_EQ": [11536] } -> Integers in example?
+        # Let's try integers.
+        
+        securities = {
+            "NSE_EQ": [int(float(str(t))) for t in tokens]
         }
         
         resp = dhan.ticker_data(securities)
