@@ -278,10 +278,14 @@ def fetch_market_feed_bulk(dhan, tokens):
              
              # Handle Dict Response (e.g. {'1333': {'last_price': 123.45}})
              if isinstance(nse_data, dict):
+                 # logger.info(f"Parsing Dict Data: {list(nse_data.keys())[:5]}") # DEBUG
                  for token_id, details in nse_data.items():
                      if isinstance(details, dict):
                          ltp = float(details.get('last_price', details.get('lastPrice', 0.0)))
                          result[str(token_id)] = ltp
+                     else:
+                         logger.warning(f"Expected dict for details, got {type(details)}: {details}")
+             # Handle potential List Response (just in case API changes back)
              # Handle potential List Response (just in case API changes back)
              elif isinstance(nse_data, list):
                  for item in nse_data:
