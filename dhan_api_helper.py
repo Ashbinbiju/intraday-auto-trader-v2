@@ -212,7 +212,7 @@ def fetch_ltp(dhan, token, symbol):
         return None
         
     except Exception as e:
-         # Reduce log noise for common fetch errors
+         # Debugging: Log the detailed error
          logger.warning(f"Error fetching LTP {symbol}: {e}")
          return None
 
