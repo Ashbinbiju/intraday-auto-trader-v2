@@ -663,9 +663,19 @@ def run_bot_loop(async_loop=None, ws_manager=None):
     def broadcast_state():
         if async_loop and ws_manager:
             try:
-                # We send the entire BOT_STATE. For optimization, we could send diffs.
-                # Use run_coroutine_threadsafe to bridge Sync Thread -> Async Loop
-                asyncio.run_coroutine_threadsafe(ws_manager.broadcast(BOT_STATE), async_loop)
+                # logger.info("Broadcasting State Update...") 
+                future = asyncio.run_coroutine_threadsafe(ws_manager.broadcast(BOT_STATE), async_loop)
+                
+                # Check for exceptions in the async task (Critical for debugging serialization errors)
+                def check_error(f):
+                    try:
+                        if f.exception():
+                            logger.error(f"WS Broadcast Async Error: {f.exception()}")
+                    except:
+                        pass
+                        
+                future.add_done_callback(check_error)
+                
             except Exception as e:
                 logger.error(f"WS Broadcast Failed: {e}")
 
