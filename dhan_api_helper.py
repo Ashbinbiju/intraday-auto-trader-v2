@@ -284,3 +284,51 @@ def fetch_order_list(dhan):
         logger.error(f"Error fetching order list: {e}")
         return []
 
+def verify_order_status(dhan, order_id, retries=5, delay=1):
+    """
+    Verifies if an order was successfully placed and is not Rejected.
+    Returns: (is_success: bool, status: str, average_price: float)
+    """
+    if not order_id: return False, "NO_ID", 0.0
+    
+    # Handle Dry Run / Simulation (Boolean True)
+    if order_id is True or str(order_id).upper() == "DRY_RUN":
+        return True, "DRY_RUN", 0.0
+    
+    for i in range(retries):
+        try:
+            # Fetch order details
+            # Note: DhanHQ `get_order_by_id` takes ID.
+            resp = dhan.get_order_by_id(order_id)
+            
+            if resp['status'] == 'success':
+                data = resp['data']
+                status = data.get('orderStatus', '').upper() # TRADED, PENDING, REJECTED, CANCELLED
+                
+                # REJECTED
+                if status == 'REJECTED':
+                    reason = data.get('errMsg', 'Unknown Rejection')
+                    return False, f"REJECTED: {reason}", 0.0
+                
+                # CANCELLED
+                if status == 'CANCELLED':
+                    return False, "CANCELLED", 0.0
+                
+                # SUCCESS (TRADED or PENDING/OPEN is considered successfully placed)
+                # But for our bot, we want to confirm it's not rejected immediately.
+                # If PENDING, we wait a bit or assume open.
+                # If TRADED, get price.
+                avg_price = float(data.get('tradedAvg', 0.0))
+                if avg_price == 0:
+                     avg_price = float(data.get('price', 0.0))
+
+                return True, status, avg_price
+            
+            time.sleep(delay)
+            
+        except Exception as e:
+            logger.error(f"Error verifying order {order_id}: {e}")
+            time.sleep(delay)
+            
+    return False, "TIMEOUT_VERIFY", 0.0
+
