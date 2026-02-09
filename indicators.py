@@ -81,6 +81,18 @@ def check_buy_condition(df, current_price=None, extension_limit=1.5):
     # 2. Candle Color (Green)
     if price <= open_price:
          reasons.append("Red Candle (Price <= Open)")
+    else:
+         # 2.1 Wick Rejection Filter (Only on Green Candles)
+         # Reject if Upper Wick > 40% of Total Range (Shooting Star / Rejection)
+         high = last_row['high']
+         low = last_row['low']
+         upper_wick = high - close_price
+         total_range = high - low
+         
+         if total_range > 0:
+             wick_pct = upper_wick / total_range
+             if wick_pct > 0.40:
+                 reasons.append(f"Wick Rejection (Upper Wick {wick_pct:.0%} > 40%)")
 
     # 3. Volume Confirmation (Volume Spike > 1.5x Average)
     if current_vol <= (vol_sma * 1.5):
