@@ -16,6 +16,7 @@ from main import (
 from config import config_manager
 from ws_hub import manager
 from state_manager import save_state, state_lock
+from datetime import datetime
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO)
@@ -146,7 +147,7 @@ def toggle_trading():
     return {"status": "success", "is_trading_allowed": BOT_STATE["is_trading_allowed"]}
 
 @app.post("/trade/close/{symbol}")
-def close_position(symbol: str):
+async def close_position(symbol: str):
     with state_lock:
         if symbol not in BOT_STATE["positions"]:
             raise HTTPException(status_code=404, detail="Position not found")
@@ -164,9 +165,28 @@ def close_position(symbol: str):
         # Place sell order
         try:
             place_sell_order(SMART_API_SESSION, symbol, token, pos['qty'], reason="MANUAL_CLOSE")
+            
+            # Update State
+            current_ltp = pos.get('current_ltp', 0.0)
+            entry_price = pos.get('entry_price', 0.0)
+            
             pos['status'] = "CLOSED"
             pos['exit_reason'] = "MANUAL_CLOSE"
+            pos['exit_price'] = current_ltp
+            pos['exit_time'] = datetime.now().isoformat()
+            
+            # Log to DB
+            from database import log_trade_to_db
+            trade_log = pos.copy()
+            trade_log['pnl'] = (current_ltp - entry_price) * pos['qty']
+            threading.Thread(target=log_trade_to_db, args=(trade_log,)).start()
+            
             save_state(BOT_STATE)
+            
+            # Broadcast Update
+            from ws_hub import manager
+            await manager.broadcast(BOT_STATE)
+            
             return {"status": "success", "message": f"Closed {symbol}"}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
