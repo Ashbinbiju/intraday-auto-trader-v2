@@ -1081,6 +1081,24 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                     if orderId:
                                         is_success, status, avg_price = verify_order_status(smartApi, orderId)
                                         
+                                        # --- TIMEOUT RECOVERY: LAST RESORT ---
+                                        if not is_success and "TIMEOUT" in str(status):
+                                            logger.warning(f"⚠️ Order Verification Timed Out for {symbol}. Checking Positions directly...")
+                                            from dhan_api_helper import fetch_net_positions
+                                            live_positions = fetch_net_positions(smartApi)
+                                            if live_positions:
+                                                for pos in live_positions:
+                                                    # Check if symbol matches and qty matches (approx)
+                                                    if pos.get("tradingsymbol") == symbol and abs(int(pos.get("netqty", 0))) == quantity:
+                                                        logger.info(f"✅ RECOVERY SUCCESS: Found {symbol} in positions! Assuming Order Success.")
+                                                        is_success = True
+                                                        status = "TRADED (RECOVERED)"
+                                                        avg_price = float(pos.get("avgnetprice", 0))
+                                                        # If avg_price is 0, use last known price
+                                                        if avg_price == 0: avg_price = price
+                                                        break
+                                        # -------------------------------------
+                                        
                                         if is_success:
                                             entry_price = avg_price if avg_price > 0 else price
                                             
