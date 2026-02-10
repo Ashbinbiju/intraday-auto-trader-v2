@@ -156,8 +156,11 @@ def fetch_candle_data(dhan, token, symbol, interval="FIFTEEN_MINUTE", days=5):
         dhan_interval = 15
         if interval == "FIVE_MINUTE":
             dhan_interval = 5
-        elif interval == "ONE_MINUTE":
+        if interval == "ONE_MINUTE":
             dhan_interval = 1
+            
+        # Rate Limit
+        api_rate_limiter.wait()
             
         data = dhan.intraday_minute_data(
             security_id=str(token),
@@ -178,7 +181,11 @@ def fetch_candle_data(dhan, token, symbol, interval="FIFTEEN_MINUTE", days=5):
              time_key = next((k for k in ['timestamp', 'start_Time', 'start_time', 'time'] if k in raw), None)
              
              if not time_key:
+                 logger.warning(f"Candle Data Missing Time Key. Keys: {raw.keys()}")
                  return None
+        else:
+             logger.warning(f"Candle Fetch Failed for {symbol}. Response: {data}")
+             return None
                  
              df = pd.DataFrame({
                  'datetime': pd.to_datetime(raw[time_key], unit='s' if isinstance(raw[time_key][0], (int, float)) else None), 
