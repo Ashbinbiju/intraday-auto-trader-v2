@@ -212,10 +212,14 @@ def fetch_ltp(dhan, token, symbol):
     This is the lightweight and correct way to get real-time prices.
     """
     try:
-        # Prepare Payload: keys are exchange segments, values are lists of security IDs
-        # token is usually string, ensure it's compliant
+        # Rate Limit
+        api_rate_limiter.wait()
+        
+        # Prepare Payload
+        t_val = int(float(str(token)))
+        # logger.debug(f"Fetching LTP for {symbol} Token: {t_val}") 
         securities = {
-            "NSE_EQ": [int(float(str(token)))]  # Dhan expects Integers for Ticker Data 
+            "NSE_EQ": [t_val] 
         }
         
         resp = dhan.ticker_data(securities)
