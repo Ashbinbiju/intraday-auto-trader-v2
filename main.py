@@ -904,13 +904,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                     BOT_STATE["top_sectors"] = target_sectors
         
                     for sector in target_sectors:
-                        logger.info(f"Scanning Sector: {sector['name']}...")
                         stocks = fetch_stocks_in_sector(sector['key'])
-                        if not stocks:
-                            logger.warning(f"No stocks found for {sector['name']}")
-                            continue
-                            
-                        logger.info(f"Found {len(stocks)} stocks in {sector['name']}")
                         for stock in stocks:
                             symbol = stock['symbol']
                             
