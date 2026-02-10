@@ -747,7 +747,8 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                 # --- Market Schedule Check ---
                 is_open, reason = is_market_open()
                 if not is_open:
-                    time.sleep(1800) 
+                    logger.info(f"Market Closed ({reason}). Sleeping for 60s...")
+                    time.sleep(60) 
                     # Still broadcast while sleeping occasionally?
                     continue
                 # -----------------------------
