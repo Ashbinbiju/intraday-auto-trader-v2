@@ -820,8 +820,23 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                     time.sleep(10)
                     continue
     
+                # --- Fetch Market Indices (New) ---
+                indices = fetch_market_indices()
+                if indices:
+                    BOT_STATE["indices"] = indices
+                    
+                # --- Pre-Fetch Top Sectors for UI (Even before Start Time) ---
+                strategy_mode = config_manager.get("general", "strategy_mode") or "SECTOR_MOMENTUM"
+                if strategy_mode != "MARKET_MOVER":
+                     sectors = fetch_top_performing_sectors()
+                     if sectors:
+                         BOT_STATE["top_sectors"] = sectors[:4] # Store top 4 for UI
+                
+                broadcast_state() # Update UI with indices & sectors
+                # ----------------------------------
+
                 if current_time < trading_start_time:
-                    logger.info(f"Market Open, but waiting for Strategy Start Time ({trading_start_time})...")
+                    logger.info(f"Market Open. Indices/Sectors Updated. Waiting for Strategy Start Time ({trading_start_time})...")
                     time.sleep(60)
                     continue
     
@@ -832,16 +847,9 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                 if BOT_STATE["total_trades_today"] >= max_trades_day:
                     time.sleep(60)
                     continue
-    
-                # --- Fetch Market Indices (New) ---
-                indices = fetch_market_indices()
-                if indices:
-                    BOT_STATE["indices"] = indices
-                    broadcast_state() # Update UI with indices
-                # ----------------------------------
                 
                 # --- STRATEGY SELECTION ---
-                strategy_mode = config_manager.get("general", "strategy_mode") or "SECTOR_MOMENTUM"
+                # strategy_mode already fetched above
                 
                 stocks_to_scan = []
                 seen_symbols = set()
