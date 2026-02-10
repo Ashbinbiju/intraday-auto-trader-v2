@@ -170,12 +170,13 @@ class AsyncScanner:
         
         # Final Decision
         if bullish_count == 2:
-            logger.info(f"[REGIME] {' '.join(regime_details)} -> TREND_MODE (EXT=3.0)")
-            return 3.0
+            logger.info(f"[REGIME] {' '.join(regime_details)} -> TREND_MODE (EXT=2.0)")
+            return 2.0
         else:
+            # Stricter Safety Mode to avoid chasing (0.8%)
             reason = "WEAK_RANGE" if len(regime_details) >= 1 else "DATA_ISSUE"
-            logger.info(f"[REGIME] {' '.join(regime_details)} -> SAFETY_MODE (EXT=1.5) reason={reason}")
-            return 1.5
+            logger.info(f"[REGIME] {' '.join(regime_details)} -> SAFETY_MODE (EXT=0.8) reason={reason}")
+            return 0.8
         
 
 

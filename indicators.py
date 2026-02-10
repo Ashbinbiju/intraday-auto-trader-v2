@@ -78,6 +78,12 @@ def check_buy_condition(df, current_price=None, extension_limit=1.5):
     if price <= ema_20:
         reasons.append(f"Price below EMA20")
 
+    # 1.1 Extension Filter (Don't chase if too far from EMA20)
+    if ema_20 > 0:
+        extension_pct = (price - ema_20) / ema_20 * 100
+        if extension_pct > extension_limit:
+            reasons.append(f"Overextended ({extension_pct:.2f}% > Limit {extension_limit}%)")
+
     # 2. Candle Color (Green)
     if price <= open_price:
          reasons.append("Red Candle (Price <= Open)")
