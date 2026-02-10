@@ -44,8 +44,8 @@ def fetch_top_performing_sectors():
             pct_change = percentages[i]
             # Use keyword if available, else label, for the next API call
             api_key = keywords[i] if i < len(keywords) else sector_name
-            # DEBUG: Print mapping
-            print(f"DEBUG: Index {i} | Label: {sector_name} | Key: {api_key} | Change: {pct_change}")
+            # DEBUG: Print mapping (Removed to clean logs)
+            # print(f"DEBUG: Index {i} | Label: {sector_name} | Key: {api_key} | Change: {pct_change}")
             
             sectors.append({
                 "name": sector_name,

@@ -215,7 +215,7 @@ def fetch_ltp(dhan, token, symbol):
         # Prepare Payload: keys are exchange segments, values are lists of security IDs
         # token is usually string, ensure it's compliant
         securities = {
-            "NSE_EQ": [str(token)] 
+            "NSE_EQ": [int(float(str(token)))]  # Dhan expects Integers for Ticker Data 
         }
         
         resp = dhan.ticker_data(securities)
@@ -279,7 +279,7 @@ def fetch_market_feed_bulk(dhan, tokens):
              
              # Patch: Unwrap nested 'data' if present (Observed in logs: data={'data': {...}, 'status': 'success'})
              if isinstance(data, dict) and 'data' in data and 'NSE_EQ' not in data:
-                 logger.info("DEBUG: Unwrapping nested 'data' key from response.")
+                 # logger.debug("Unwrapping nested 'data' key from response.")
                  data = data['data']
                  
              nse_data = data.get('NSE_EQ', {})

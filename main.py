@@ -904,7 +904,13 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                     BOT_STATE["top_sectors"] = target_sectors
         
                     for sector in target_sectors:
+                        logger.info(f"Scanning Sector: {sector['name']}...")
                         stocks = fetch_stocks_in_sector(sector['key'])
+                        if not stocks:
+                            logger.warning(f"No stocks found for {sector['name']}")
+                            continue
+                            
+                        logger.info(f"Found {len(stocks)} stocks in {sector['name']}")
                         for stock in stocks:
                             symbol = stock['symbol']
                             
@@ -1129,6 +1135,9 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                 break
             except Exception as e:
                 logger.error(f"Error in Main Loop: {e}")
+                print(f"CRITICAL ERROR IN MAIN LOOP: {e}") # Force stdout
+                import traceback
+                traceback.print_exc()
                 time.sleep(60)
         
     except Exception as e:
