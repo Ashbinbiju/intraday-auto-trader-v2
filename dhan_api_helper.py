@@ -223,12 +223,26 @@ def fetch_ltp(dhan, token, symbol):
         if resp['status'] == 'success' and resp.get('data'):
              # Response format: {'NSE_EQ': [{'tradingSymbol': '...', 'lastPrice': 345.5, ...}]}
              data = resp['data']
+             
+             # Patch: Unwrap nested 'data' if present
+             if isinstance(data, dict) and 'data' in data and 'NSE_EQ' not in data:
+                 data = data['data']
+                 
              nse_data = data.get('NSE_EQ', [])
              
-             for item in nse_data:
-                 # Check if token matches (sometimes response includes others if bulk)
-                 # But here we asked for one.
-                 return float(item.get('lastPrice', 0.0))
+             # Handle Dict Response (seen in logs: {'1485': {'last_price': ...}})
+             if isinstance(nse_data, dict):
+                 for token_id, details in nse_data.items():
+                     # We expect only one item since we requested one
+                     if isinstance(details, dict):
+                         return float(details.get('last_price', details.get('lastPrice', 0.0)))
+
+             # Handle List Response
+             elif isinstance(nse_data, list):
+                 for item in nse_data:
+                     # Check if token matches (sometimes response includes others if bulk)
+                     # But here we asked for one.
+                     return float(item.get('lastPrice', 0.0))
         
         # Debugging: Log response if data is missing or status failed
         logger.warning(f"LTP Fetch Failed for {symbol}. Response: {resp}")
@@ -359,7 +373,7 @@ def place_order_api(dhan, params):
         
         dhan_txn_type = dhanhq.BUY if params.get('transactiontype') == 'BUY' else dhanhq.SELL
         dhan_order_type = dhanhq.MARKET if params.get('ordertype') == 'MARKET' else dhanhq.LIMIT
-        dhan_product = dhanhq.INTRADAY if params.get('producttype') == 'INTRADAY' else dhanhq.CNC
+        dhan_product = dhanhq.INTRA if params.get('producttype') == 'INTRADAY' else dhanhq.CNC
         
         # AUDIT: ORDER PLACEMENT
         resp = dhan.place_order(
