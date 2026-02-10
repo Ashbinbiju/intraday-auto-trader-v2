@@ -14,6 +14,8 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "application/json, text/plain, */*",
     "Referer": "https://intradayscreener.com/sector-performance",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache"
 }
 
 def fetch_top_performing_sectors():
@@ -98,7 +100,8 @@ def fetch_market_indices():
     """
     url = "https://intradayscreener.com/api/indices/indexData"
     try:
-        response = requests.get(url, headers=HEADERS, timeout=10)
+        # Add timestamp to prevent caching
+        response = requests.get(url, headers=HEADERS, params={"_": int(time.time())}, timeout=10)
         response.raise_for_status()
         data = response.json()
         return data # Returns list of dicts directly
