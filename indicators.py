@@ -193,9 +193,11 @@ def check_chop_filter(df):
     past_ema = df.iloc[-7].get('EMA_20') 
     
     if current_ema and past_ema:
-        slope_pct = abs((current_ema - past_ema) / past_ema) * 100
-        # If slope is very flat (< 0.05% over 25 mins), it's weak
+        # FIX: Remove abs() - Long-only strategy needs POSITIVE slope
+        slope_pct = ((current_ema - past_ema) / past_ema) * 100
+        
+        # If slope is negative or very flat (< 0.05% over 25 mins), it's weak
         if slope_pct < 0.05:
-             return False, f"Weak Trend (EMA Slope {slope_pct:.3f}% < 0.05%)"
+             return False, f"Weak/Negative Trend (EMA Slope {slope_pct:.3f}% < 0.05%)"
 
     return True, "Trend Clean"
