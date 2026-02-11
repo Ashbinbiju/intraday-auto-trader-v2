@@ -68,7 +68,7 @@ def check_buy_condition(df, current_price=None, extension_limit=1.5):
     ema_20 = last_row.get('EMA_20')
     vwap = last_row.get('VWAP')
     vol_sma = last_row.get('Volume_SMA_20')
-    current_vol = last_row.get('volume')
+    closed_vol = last_row.get('volume') # From iloc[-2] (Completed Candle)
     open_price = last_row.get('open')
     close_price = last_row.get('close')
     datetime_str = str(last_row.get('datetime', 'Unknown'))
@@ -118,8 +118,8 @@ def check_buy_condition(df, current_price=None, extension_limit=1.5):
     # Otherwise (Safety Mode), keep strict 1.5x.
     vol_multiplier = 1.2 if extension_limit >= 1.9 else 1.5
     
-    if current_vol <= (vol_sma * vol_multiplier):
-        reasons.append(f"Low Volume ({current_vol} < {vol_multiplier}x Avg {int(vol_sma)})")
+    if closed_vol <= (vol_sma * vol_multiplier):
+        reasons.append(f"Low Volume ({closed_vol} < {vol_multiplier}x Avg {int(vol_sma)})")
 
     # 4. Volatility Guard (Huge Candle Protection)
     # Reject if candle range > 2% (Too volatile/slippage risk)
@@ -133,7 +133,7 @@ def check_buy_condition(df, current_price=None, extension_limit=1.5):
         if ema_dist > extension_limit:
              return False, f"Late Entry Guard: Price is {ema_dist:.2f}% > EMA20 (Max {extension_limit}%)"
 
-        return True, f"Strong Buy: Price > VWAP/EMA20 + Vol Spike ({int(current_vol)}) + Green Candle"
+        return True, f"Strong Buy: Price > VWAP/EMA20 + Vol Spike ({int(closed_vol)}) + Green Candle"
     
     return False, f"Skipped: {', '.join(reasons)}"
 
