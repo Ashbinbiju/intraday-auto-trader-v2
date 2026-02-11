@@ -188,8 +188,9 @@ def check_chop_filter(df):
 
     # 2. EMA Slope Check (Trend Strength)
     # Compare EMA20 now vs 5 candles ago
-    current_ema = df.iloc[-1].get('EMA_20')
-    past_ema = df.iloc[-6].get('EMA_20') # 5 bars ago
+    # FIX: Use completed candle (iloc[-2]) and 5 bars prior (iloc[-7]) 
+    current_ema = df.iloc[-2].get('EMA_20')
+    past_ema = df.iloc[-7].get('EMA_20') 
     
     if current_ema and past_ema:
         slope_pct = abs((current_ema - past_ema) / past_ema) * 100
