@@ -122,10 +122,13 @@ def check_buy_condition(df, current_price=None, extension_limit=1.5):
         reasons.append(f"Low Volume ({closed_vol} < {vol_multiplier}x Avg {int(vol_sma)})")
 
     # 4. Volatility Guard (Huge Candle Protection)
-    # Reject if candle range > 2% (Too volatile/slippage risk)
+    # Reject if candle range is too big (Slippage/Exhaustion risk)
+    # Safety Mode: Max 1.0% | Trend Mode: Max 1.5%
+    max_candle_range = 1.5 if extension_limit >= 1.9 else 1.0
+    
     candle_range_pct = ((last_row['high'] - last_row['low']) / last_row['open']) * 100
-    if candle_range_pct > 2.0:
-        reasons.append(f"Huge Candle ({candle_range_pct:.2f}% > 2%)")
+    if candle_range_pct > max_candle_range:
+        reasons.append(f"Huge Candle ({candle_range_pct:.2f}% > Limit {max_candle_range}%)")
 
     if not reasons:
         # Late Entry Protection (Guard)
