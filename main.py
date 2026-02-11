@@ -190,7 +190,7 @@ def floor_to_lot_size(qty, symbol):
     """
     # For equity intraday, lot size = 1 (no restrictions)
     # If you trade F&O later, add lot size mapping here
-    return max(1, int(qty))
+    return int(qty) # Do NOT force max(1, qty) as it overrides risk limits!
 
 def calculate_position_size(entry_price, sl_price, balance, risk_pct, max_position_pct, min_sl_pct, symbol):
     """
@@ -245,7 +245,7 @@ def calculate_position_size(entry_price, sl_price, balance, risk_pct, max_positi
     
     # Ensure at least 1 share (if we got this far)
     if qty <= 0:
-        logger.warning(f"❌ {symbol}: Calculated qty={qty}, skipping trade")
+        logger.warning(f"❌ {symbol}: Position Sizing Failed. Qty={qty} (Max Qty={max_qty} due to Funds/Risk). Skipping.")
         return 0
     
     # Calculate actual exposure and risk
