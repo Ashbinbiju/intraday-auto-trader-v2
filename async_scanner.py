@@ -247,8 +247,8 @@ class AsyncScanner:
                             df_15m, df_5m = raw_data
                             # logger.info(f"[DEBUG_DATA] {symbol}: ✅ Fetched 15M ({len(df_15m)}) + 5M ({len(df_5m)}) candles")
                             
-                            # Import check_15m_bias
-                            from indicators import check_15m_bias
+                            # Import check_15m_bias AND check_chop_filter
+                            from indicators import check_15m_bias, check_chop_filter
                             
                             # Step 1: Check 15M Bias (The Golden Rule)
                             df_15m = calculate_indicators(df_15m)
@@ -260,9 +260,18 @@ class AsyncScanner:
                                 rejection_stats["Bias"] += 1
                                 continue
                             
+                            # Step 1.5: Check Chop Filter (Avoid Sideways Action)
+                            df_5m = calculate_indicators(df_5m) # Calc indicators for 5m early
+                            is_clean, chop_reason = check_chop_filter(df_5m)
+                            
+                            if not is_clean:
+                                # logger.info(f"❌ {symbol} REJECTED: {chop_reason}") 
+                                rejection_stats["Bias"] += 1 # Count as Bias/Filter rejection
+                                continue
+                            
                             
                             # Step 2: Check 5M Entry Signal
-                            df_5m = calculate_indicators(df_5m)
+                            # df_5m already calculated above
                             screener_ltp = 0.0
                             buy_signal, message = check_buy_condition(df_5m, current_price=screener_ltp, extension_limit=extension_limit)
                             

@@ -237,8 +237,13 @@ def calculate_position_size(entry_price, sl_price, balance, risk_pct, max_positi
     qty = int(risk_amount / sl_distance)
     
     # Enforce maximum position size (prevent overexposure)
-    max_qty = int((balance * max_position_pct / 100) / entry_price)
+    # FIX: Ensure max_position_pct is strictly capped at 20.0
+    safe_max_pos_pct = min(float(max_position_pct), 20.0) 
+    
+    max_qty = int((balance * safe_max_pos_pct / 100) / entry_price)
     qty = min(qty, max_qty)
+    
+    logger.info(f"MaxQty Check: {symbol} | Bal={balance} | MaxPosPct={safe_max_pos_pct}% | LimitQty={max_qty} | RiskQty={qty}")
     
     # 🟠 FIX 2: Lot size rounding
     qty = floor_to_lot_size(qty, symbol)

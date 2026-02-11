@@ -137,3 +137,44 @@ def check_15m_bias(df):
     if price < vwap and price < ema_20:
         return 'BEARISH', f"15M: Price < VWAP ({vwap:.2f}) + below EMA20"
     return 'NEUTRAL', f"15M: Choppy (Price near VWAP/EMA20)"
+
+def check_chop_filter(df):
+    """
+    Filters out stocks that are chopping sideways or have weak trends.
+    Returns: (is_clean_trend, reason)
+    """
+    if df is None or len(df) < 10:
+        return True, "Insufficient Data" # Default to True (allow) if data scarce
+    
+    # 1. VWAP Chop Check (Zig-Zag around VWAP)
+    # Count how many times price crossed VWAP in last 10 candles
+    recent = df.iloc[-10:]
+    crosses = 0
+    was_above = None
+    
+    for i, row in recent.iterrows():
+        close = row['close']
+        vwap = row.get('VWAP')
+        if not vwap: continue
+        
+        is_above = close > vwap
+        if was_above is not None and is_above != was_above:
+            crosses += 1
+        was_above = is_above
+        
+    if crosses >= 4:
+        # Too many crosses = CHOP
+        return False, f"Choppy Action ({crosses} VWAP crosses in 10 candles)"
+
+    # 2. EMA Slope Check (Trend Strength)
+    # Compare EMA20 now vs 5 candles ago
+    current_ema = df.iloc[-1].get('EMA_20')
+    past_ema = df.iloc[-6].get('EMA_20') # 5 bars ago
+    
+    if current_ema and past_ema:
+        slope_pct = abs((current_ema - past_ema) / past_ema) * 100
+        # If slope is very flat (< 0.05% over 25 mins), it's weak
+        if slope_pct < 0.05:
+             return False, f"Weak Trend (EMA Slope {slope_pct:.3f}% < 0.05%)"
+
+    return True, "Trend Clean"
