@@ -158,15 +158,15 @@ class AsyncScanner:
                     
                     if found_indices < 2:
                         logger.warning("External API did not return both indices.")
-                        return 1.5 # Safety
+                        return 0.8 # Safety Mode Fallback
                         
                 else:
                     logger.warning(f"External API Failed: {response.status}")
-                    return 1.5
+                    return 0.8
 
         except Exception as e:
             logger.error(f"Sentiment Check Failed: {e}")
-            return 1.5
+            return 0.8
         
         # Final Decision
         if bullish_count == 2:
@@ -203,13 +203,12 @@ class AsyncScanner:
 
             tasks = []
             
-            # Rate Limiting: Process in batches or with delay
-            # Angel One Rate Limit is approx 3 requests per second for Historical Data.
-            # We have 176 stocks. Firing all at once gets us banned (AB2001).
-            # Strategy: Fire 3 requests, wait 1 second.
+            # Rate Limiting: Process in smaller batches
+            # Dhan Rate Limit is aggressive for historical data (DH-904).
+            # Dropping from 3/sec to 1/sec + delay.
             
-            rate_limit_batch_size = 3
-            rate_limit_delay = 1.0 # 1 Second constraint
+            rate_limit_batch_size = 1
+            rate_limit_delay = 0.6 # Slower but safer (Approx 1.5 req/sec)
             
             total_stocks = len(stocks_list)
             
