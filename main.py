@@ -317,9 +317,21 @@ def calculate_structure_based_sl(df, entry_price, vwap, ema20):
     # Calculate distance
     sl_distance_pct = ((entry_price - best_sl) / entry_price) * 100
     
-    # Safety Check: Reject if SL < 0.8% (wick risk)
-    if sl_distance_pct < min_sl_distance:
-        return None, f"SL too tight ({sl_distance_pct:.2f}%) - wick risk", sl_distance_pct
+    # Safety Check: Dynamic Min SL based on ATR
+    # Logic: max(0.4%, 0.6 * ATR%) to allow Large Caps with small ATR
+    # Hard Min: 0.4% (to cover fees/slippage)
+    
+    current_atr = df.iloc[-1].get('ATR')
+    dynamic_min_sl = min_sl_distance # Default to config (0.8%)
+    
+    if current_atr and current_atr > 0:
+        atr_pct = (current_atr / entry_price) * 100
+        dynamic_min = max(0.4, 0.6 * atr_pct) # 0.6x ATR or 0.4% absolute min
+        # Relax the strict 0.8% limit if ATR allows it
+        dynamic_min_sl = min(min_sl_distance, dynamic_min) 
+    
+    if sl_distance_pct < dynamic_min_sl:
+        return None, f"SL too tight ({sl_distance_pct:.2f}% < {dynamic_min_sl:.2f}%) - wick risk", sl_distance_pct
     
     # Safety Check: Reject if SL > 2% away
     if sl_distance_pct > max_sl_distance:

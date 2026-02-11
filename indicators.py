@@ -31,6 +31,19 @@ def calculate_indicators(df):
     
     # Volume SMA 20
     df['Volume_SMA_20'] = df['volume'].ewm(span=20, adjust=False).mean()
+    
+    # ATR 14 Calculation (Manual TR) for Dynamic SL
+    high = df['high']
+    low = df['low']
+    close = df['close']
+    prev_close = close.shift(1)
+    
+    tr1 = high - low
+    tr2 = (high - prev_close).abs()
+    tr3 = (low - prev_close).abs()
+    
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    df['ATR'] = tr.ewm(span=14, adjust=False).mean()
 
     return df
 
@@ -100,9 +113,13 @@ def check_buy_condition(df, current_price=None, extension_limit=1.5):
              if wick_pct > 0.40:
                  reasons.append(f"Wick Rejection (Upper Wick {wick_pct:.0%} > 40%)")
 
-    # 3. Volume Confirmation (Volume Spike > 1.5x Average)
-    if current_vol <= (vol_sma * 1.5):
-        reasons.append(f"Low Volume ({current_vol} < 1.5x Avg {int(vol_sma)})")
+    # 3. Volume Confirmation (Adaptive Mechanism)
+    # If in Trend Mode (ExtLimit >= 2.0), relax Vol to 1.2x.
+    # Otherwise (Safety Mode), keep strict 1.5x.
+    vol_multiplier = 1.2 if extension_limit >= 1.9 else 1.5
+    
+    if current_vol <= (vol_sma * vol_multiplier):
+        reasons.append(f"Low Volume ({current_vol} < {vol_multiplier}x Avg {int(vol_sma)})")
 
     # 4. Volatility Guard (Huge Candle Protection)
     # Reject if candle range > 2% (Too volatile/slippage risk)
