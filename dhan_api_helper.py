@@ -26,9 +26,18 @@ class RateLimiter:
                 time.sleep(self.interval - elapsed)
             self.last_call = time.time()
 
-# Global Limiter (5 req/s per docs: Data API Limit)
-# We share this across all threads to prevent burst overlaps.
-api_rate_limiter = RateLimiter(calls_per_second=5)
+# --- RATE LIMITERS ---
+# Based on Dhan API Documentation:
+# Data APIs (Candles): 5 req/s
+# Quote APIs (LTP, Ticker): 1 req/s
+# Order APIs (Place, Modify): 10 req/s
+
+data_limiter = RateLimiter(calls_per_second=5)
+quote_limiter = RateLimiter(calls_per_second=1)
+order_limiter = RateLimiter(calls_per_second=10)
+
+# Legacy global alias (deprecated, pointing to data for backward compat if missed)
+api_rate_limiter = data_limiter
 
 def get_dhan_session():
     """
@@ -159,8 +168,8 @@ def fetch_candle_data(dhan, token, symbol, interval="FIFTEEN_MINUTE", days=5):
         if interval == "ONE_MINUTE":
             dhan_interval = 1
             
-        # Rate Limit
-        api_rate_limiter.wait()
+        # Rate Limit (Data API: 5/s)
+        data_limiter.wait()
             
         data = dhan.intraday_minute_data(
             security_id=str(token),
@@ -221,8 +230,8 @@ def fetch_ltp(dhan, token, symbol):
     This is the lightweight and correct way to get real-time prices.
     """
     try:
-        # Rate Limit
-        api_rate_limiter.wait()
+        # Rate Limit (Quote API: 1/s)
+        quote_limiter.wait()
         
         # Prepare Payload
         t_val = int(float(str(token)))
@@ -274,8 +283,8 @@ def fetch_market_feed_bulk(dhan, tokens):
     if not tokens:
         return {}
         
-    # Wait for rate limit slot
-    api_rate_limiter.wait()
+    # Wait for rate limit slot (Quote API: 1/s)
+    quote_limiter.wait()
     
     try:
         # Dhan expects string tokens? Or Integers?
@@ -377,8 +386,8 @@ def place_order_api(dhan, params):
     Places order with pre-trade checks.
     """
     try:
-        # Rate Limit Check
-        api_rate_limiter.wait()
+        # Rate Limit Check (Order API: 10/s)
+        order_limiter.wait()
         
         # AUDIT: FUNDS CHECK
         # We should ideally check funds here, but speed is key.
@@ -425,8 +434,8 @@ def fetch_order_list(dhan):
     Fetches all orders for the day.
     Returns list of order dictionaries.
     """
-    # Wait for rate limit slot
-    api_rate_limiter.wait()
+    # Wait for rate limit slot (Order API: 10/s)
+    order_limiter.wait()
     
     try:
         resp = dhan.get_order_list()
