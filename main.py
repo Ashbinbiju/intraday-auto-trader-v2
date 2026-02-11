@@ -242,10 +242,19 @@ def calculate_position_size(entry_price, sl_price, balance, risk_pct, max_positi
     # FIX: Ensure max_position_pct is strictly capped at 20.0
     safe_max_pos_pct = min(float(max_position_pct), 20.0) 
     
-    max_qty = int((balance * safe_max_pos_pct / 100) / entry_price)
+    # === LEVERAGE UPDATE ===
+    # Fetch leverage from config (default 1 if not set)
+    leverage = config_manager.get("position_sizing", "leverage_equity") or 1.0
+    
+    # Calculate Buying Power = Cash * Leverage
+    # Max Amount per Trade = Buying Power * (max_pos_pct / 100)
+    # Max Qty = Max Amount / Entry Price
+    max_amount = (balance * leverage) * (safe_max_pos_pct / 100)
+    max_qty = int(max_amount / entry_price)
+    
     qty = min(qty, max_qty)
     
-    logger.info(f"MaxQty Check: {symbol} | Bal={balance} | MaxPosPct={safe_max_pos_pct}% | LimitQty={max_qty} | FinalQty={qty}")
+    logger.info(f"Size Check: {symbol} | Bal={balance} | Lev={leverage}x | MaxAmt=₹{max_amount:.0f} | RiskQty={int(risk_amount/sl_distance)} | LimitQty={max_qty} -> Final={qty}")
     
     # 🟠 FIX 2: Lot size rounding
     qty = floor_to_lot_size(qty, symbol)
