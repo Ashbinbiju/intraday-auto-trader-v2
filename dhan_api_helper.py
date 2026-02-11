@@ -26,9 +26,9 @@ class RateLimiter:
                 time.sleep(self.interval - elapsed)
             self.last_call = time.time()
 
-# Global Limiter (2 req/s safe for 10/s limit)
+# Global Limiter (5 req/s per docs: Data API Limit)
 # We share this across all threads to prevent burst overlaps.
-api_rate_limiter = RateLimiter(calls_per_second=2)
+api_rate_limiter = RateLimiter(calls_per_second=5)
 
 def get_dhan_session():
     """
