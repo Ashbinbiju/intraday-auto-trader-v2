@@ -245,7 +245,7 @@ def calculate_position_size(entry_price, sl_price, balance, risk_pct, max_positi
     max_qty = int((balance * safe_max_pos_pct / 100) / entry_price)
     qty = min(qty, max_qty)
     
-    logger.info(f"MaxQty Check: {symbol} | Bal={balance} | MaxPosPct={safe_max_pos_pct}% | LimitQty={max_qty} | RiskQty={qty}")
+    logger.info(f"MaxQty Check: {symbol} | Bal={balance} | MaxPosPct={safe_max_pos_pct}% | LimitQty={max_qty} | FinalQty={qty}")
     
     # 🟠 FIX 2: Lot size rounding
     qty = floor_to_lot_size(qty, symbol)
