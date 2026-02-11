@@ -118,7 +118,7 @@ def check_buy_condition(df, current_price=None, extension_limit=1.5):
     # Otherwise (Safety Mode), keep strict 1.5x.
     vol_multiplier = 1.2 if extension_limit >= 1.9 else 1.5
     
-    if closed_vol <= (vol_sma * vol_multiplier):
+    if closed_vol < (vol_sma * vol_multiplier):
         reasons.append(f"Low Volume ({closed_vol} < {vol_multiplier}x Avg {int(vol_sma)})")
 
     # 4. Volatility Guard (Huge Candle Protection)
