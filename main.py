@@ -215,10 +215,12 @@ def calculate_position_size(entry_price, sl_price, balance, risk_pct, max_positi
     Returns:
         int: Quantity to buy (0 if invalid)
     """
-    # 🔴 FIX 1: Zero SL distance protection
-    sl_distance = abs(entry_price - sl_price)
+    # 🔴 FIX 1: Zero SL distance protection & Direction Check
+    # For BUY trades, SL *must* be below Entry.
+    sl_distance = entry_price - sl_price
+    
     if sl_distance <= 0:
-        logger.warning(f"❌ {symbol}: Invalid SL distance (Entry={entry_price}, SL={sl_price}), skipping trade")
+        logger.warning(f"❌ {symbol}: Invalid SL (SL {sl_price} >= Entry {entry_price}), skipping trade")
         return 0
     
     # 🟢 FIX 4: Minimum SL distance enforcement
