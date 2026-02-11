@@ -177,7 +177,7 @@ def check_chop_filter(df):
         vwap = row.get('VWAP')
         if not vwap: continue
         
-        is_above = close > vwap
+        is_above = close >= vwap
         if was_above is not None and is_above != was_above:
             crosses += 1
         was_above = is_above
