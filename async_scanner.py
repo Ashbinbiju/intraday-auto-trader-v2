@@ -226,11 +226,19 @@ class AsyncScanner:
                         await asyncio.sleep(rate_limit_delay)
             
             # Process as they complete (Tasks are already running from loop above)
+            completed_count = 0
+            rejection_stats = {"Bias": 0, "Price": 0, "Wait": 0, "Data": 0}
+            
             for task in asyncio.as_completed(tasks):
+                completed_count += 1
+                if completed_count % 50 == 0:
+                    logger.info(f"⏳ Processed {completed_count}/{total_stocks} stocks...")
+                
                 symbol, raw_data = await task
                 
                 # Check for None (Failed Fetch)
                 if raw_data is None:
+                    rejection_stats["Data"] += 1
                     continue
 
                 if raw_data is not None:
@@ -238,7 +246,7 @@ class AsyncScanner:
                         # raw_data is now a tuple: (df_15m, df_5m)
                         if isinstance(raw_data, tuple) and len(raw_data) == 2:
                             df_15m, df_5m = raw_data
-                            logger.info(f"[DEBUG_DATA] {symbol}: ✅ Fetched 15M ({len(df_15m)}) + 5M ({len(df_5m)}) candles")
+                            # logger.info(f"[DEBUG_DATA] {symbol}: ✅ Fetched 15M ({len(df_15m)}) + 5M ({len(df_5m)}) candles")
                             
                             # Import check_15m_bias
                             from indicators import check_15m_bias
@@ -249,7 +257,8 @@ class AsyncScanner:
                             
                             # REJECT if 15M is not BULLISH
                             if bias_15m != 'BULLISH':
-                                logger.info(f"❌ {symbol} REJECTED: {bias_reason}")
+                                # logger.info(f"❌ {symbol} REJECTED: {bias_reason}") # Removed to reduce spam
+                                rejection_stats["Bias"] += 1
                                 continue
                             
                             
@@ -291,22 +300,22 @@ class AsyncScanner:
                                     'sector': sector_name,
                                     'time': get_ist_now().strftime("%Y-%m-%d %H:%M:%S")
                                 })
-                        else:
-                            # Log ALL rejections for debugging (since we have 0 signals)
-                            last_row = df_5m.iloc[-1]
-                            close_p = last_row['close']
-                            ema_20 = last_row['EMA_20']
-                            # rsi_val = last_row.get('RSI', 0) # Removed as RSI is not calculated
-                            
-                            # Only log "Interesting" rejections (Close > EMA20) to filter noise
-                            if close_p > ema_20:
-                                ext_pct = ((close_p - ema_20) / ema_20) * 100
-                                logger.info(f"[DEBUG_REJECT] {symbol}: Msg='{message}' | Close={close_p:.2f} EMA={ema_20:.2f} Ext={ext_pct:.2f}%")
+                            else:
+                                rejection_stats["Price"] += 1
+                                # Log "Interesting" rejections (Close > EMA20) to filter noise
+                                last_row = df_5m.iloc[-1]
+                                close_p = last_row['close']
+                                ema_20 = last_row.get('EMA_20', 0)
+                                if close_p > ema_20:
+                                    ext_pct = ((close_p - ema_20) / ema_20) * 100 if ema_20 > 0 else 0
+                                    logger.info(f"[DEBUG_REJECT] {symbol}: Msg='{message}' | Ext={ext_pct:.2f}%")
 
                     except Exception as e:
                         logger.error(f"Processing Error {symbol}: {e}")
+                        rejection_stats["Wait"] += 1 # Count processing errors as 'Other/Wait'
                         continue
         
         duration = (datetime.now() - start_time).total_seconds()
         logger.info(f"Async Scan Completed in {duration:.2f}s. Found {len(signals)} signals.")
+        logger.info(f"📊 Scan Stats: {rejection_stats}")
         return signals
