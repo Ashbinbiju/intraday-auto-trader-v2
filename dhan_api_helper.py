@@ -454,6 +454,15 @@ def verify_order_status(dhan, order_id, retries=5, delay=1):
             
             if resp['status'] == 'success':
                 data = resp['data']
+                
+                # Handling List vs Dict response
+                if isinstance(data, list):
+                    if not data:
+                        # Empty list -> treat as failure or retry
+                        time.sleep(delay)
+                        continue
+                    data = data[0]
+
                 status = data.get('orderStatus', '').upper() # TRADED, PENDING, REJECTED, CANCELLED
                 
                 # REJECTED
