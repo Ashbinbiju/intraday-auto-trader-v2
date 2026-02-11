@@ -215,6 +215,23 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
+# --- Journal / History ---
+
+@app.get("/api/trades/history")
+async def get_trade_history_api():
+    """
+    Fetches historical completed trades from DB for the Journal.
+    """
+    try:
+        import database
+        # Fetch last 500 trades
+        trades = database.fetch_trade_history(limit=500)
+        return {"trades": trades}
+    except Exception as e:
+        logger.error(f"Error fetching trade history: {e}")
+        # Return empty list on error to prevent frontend crash
+        return {"trades": []}
+
 # ----------------------------------
 # Keep-Alive (Render Free Tier)
 # ----------------------------------

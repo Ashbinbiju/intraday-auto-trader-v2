@@ -108,6 +108,26 @@ def log_trade_to_db(trade_data):
     except Exception as e:
         logger.error(f"❌ Error logging trade to DB: {e}")
 
+def fetch_trade_history(limit=1000):
+    """
+    Fetches completed trades for the Journal.
+    Ordered by exit_time DESC.
+    """
+    if not supabase: return []
+    try:
+        response = supabase.table("trade_history")\
+            .select("*")\
+            .order("exit_time", desc=True)\
+            .limit(limit)\
+            .execute()
+            
+        if response.data:
+            return response.data
+        return []
+    except Exception as e:
+        logger.error(f"❌ Error fetching trade history: {e}")
+        return []
+
 # --- Market Data (Movers) ---
 
 def log_market_movers_to_db(movers_data):

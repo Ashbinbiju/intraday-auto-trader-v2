@@ -1,113 +1,240 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { BookOpen } from 'lucide-react';
-import { useWebSocket } from '@/hooks/useWebSocket';
+import { BookOpen, Calendar, TrendingUp, TrendingDown, DollarSign, Activity } from 'lucide-react';
+import {
+    startOfMonth,
+    endOfMonth,
+    eachDayOfInterval,
+    format,
+    parseISO,
+    isSameDay,
+    getDay,
+    addDays,
+    subMonths,
+    addMonths
+} from 'date-fns';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export default function JournalPage() {
     const [trades, setTrades] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const { data: wsData } = useWebSocket();
+    const [currentMonth, setCurrentMonth] = useState(new Date());
 
     useEffect(() => {
-        if (wsData?.positions) {
-            const allPositions = wsData.positions;
-            const closedTrades = Object.entries(allPositions)
-                .map(([symbol, data]: any) => ({ symbol, ...data }))
-                .filter((p: any) =>
-                    p.status === "CLOSED" &&
-                    p.exit_reason !== 'RECONCILIATION_MISSING' && // Exclude ghost trades
-                    p.exit_price &&
-                    p.exit_price > 0 // Exclude invalid exit prices
-                );
-            setTrades(closedTrades.reverse());
+        fetchHistory();
+    }, []);
+
+    const fetchHistory = async () => {
+        try {
+            setLoading(true);
+            const res = await axios.get(`${API_URL}/api/trades/history`);
+            if (res.data?.trades) {
+                setTrades(res.data.trades);
+            }
+        } catch (error) {
+            console.error("Failed to fetch history:", error);
+        } finally {
             setLoading(false);
         }
-    }, [wsData]);
-
-    // Calculate trade grade based on R:R ratio
-    const getTradeGrade = (trade: any) => {
-        const rrRatio = trade.rr_ratio || 0;
-        if (rrRatio >= 3.0) return 'A+';
-        if (rrRatio >= 2.0) return 'A';
-        if (rrRatio >= 1.5) return 'B';
-        return 'C';
     };
 
-    const getGradeColor = (grade: string) => {
-        switch (grade) {
-            case 'A+': return 'bg-purple-500/20 text-purple-400 border border-purple-500/50';
-            case 'A': return 'bg-green-500/20 text-green-400 border border-green-500/50';
-            case 'B': return 'bg-blue-500/20 text-blue-400 border border-blue-500/50';
-            case 'C': return 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/50';
-            default: return 'bg-gray-500/20 text-gray-400 border border-gray-500/50';
-        }
+    // --- Statistics Calculation ---
+    // Filter trades for the selected month to show relevant stats
+    const monthTrades = trades.filter(t => {
+        const date = parseISO(t.entry_time);
+        return date.getMonth() === currentMonth.getMonth() &&
+            date.getFullYear() === currentMonth.getFullYear();
+    });
+
+    const totalPnL = monthTrades.reduce((acc, t) => acc + (t.pnl || 0), 0);
+    const winRate = monthTrades.length > 0
+        ? ((monthTrades.filter(t => (t.pnl || 0) > 0).length / monthTrades.length) * 100).toFixed(1)
+        : "0.0";
+    const tradeCount = monthTrades.length;
+
+    // --- Calendar Logic ---
+    const monthStart = startOfMonth(currentMonth);
+    const monthEnd = endOfMonth(currentMonth);
+    const startDate = subMonths(monthStart, 0); // Logic hook if we want to show prev month overflow? No, stick to current.
+
+    // Create grid days
+    const daysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd });
+
+    // Calculate P&L for each day
+    const getDayData = (day: Date) => {
+        const dayTrades = trades.filter(t => isSameDay(parseISO(t.entry_time), day));
+        const dailyPnL = dayTrades.reduce((acc, t) => acc + (t.pnl || 0), 0);
+        return {
+            trades: dayTrades,
+            pnl: dailyPnL,
+            count: dayTrades.length
+        };
     };
 
-    if (loading) return <div className="p-10 text-center text-gray-400 animate-pulse">Loading Trade History...</div>;
+    // Padding for start of month (Monday start? No, Sunday start usually)
+    const startDay = getDay(monthStart); // 0 = Sunday
+    const emptyDays = Array(startDay).fill(null);
 
     return (
-        <div className="space-y-6">
-            <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-                <BookOpen className="text-purple-400" /> Trade Journal
-            </h1>
+        <div className="space-y-6 max-w-[1400px] mx-auto pb-10">
+            {/* Header & Stats */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                <div>
+                    <h1 className="text-3xl font-bold text-white flex items-center gap-3">
+                        <BookOpen className="text-purple-400" /> Trade Journal
+                    </h1>
+                    <p className="text-gray-400 text-sm mt-1">Review your performance history</p>
+                </div>
 
-            <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden backdrop-blur-sm">
-                <table className="w-full text-left text-sm">
-                    <thead className="bg-white/5 uppercase text-xs text-gray-400">
-                        <tr>
-                            <th className="px-6 py-4">Symbol</th>
-                            <th className="px-6 py-4">Grade</th>
-                            <th className="px-6 py-4">Entry Time</th>
-                            <th className="px-6 py-4">Exit Time</th>
-                            <th className="px-6 py-4">Entry Price</th>
-                            <th className="px-6 py-4">Exit Price</th>
-                            <th className="px-6 py-4">P&L %</th>
-                            <th className="px-6 py-4">Reason</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-white/10">
-                        {trades.map((trade: any, i) => {
-                            const pnl = ((trade.exit_price - trade.entry_price) / trade.entry_price) * 100;
-                            const isWin = pnl > 0;
-                            const grade = getTradeGrade(trade);
+                {/* Monthly Stats Cards */}
+                <div className="flex gap-4 w-full md:w-auto">
+                    <div className={`flex-1 md:w-40 p-4 rounded-xl border ${totalPnL >= 0 ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
+                        <div className="text-gray-400 text-xs uppercase font-bold flex items-center gap-2">
+                            <DollarSign size={14} /> Monthly P&L
+                        </div>
+                        <div className={`text-2xl font-bold mt-1 ${totalPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            {totalPnL >= 0 ? '+' : ''}₹{totalPnL.toFixed(2)}
+                        </div>
+                    </div>
 
-                            return (
+                    <div className="flex-1 md:w-32 p-4 rounded-xl border bg-blue-500/10 border-blue-500/30">
+                        <div className="text-gray-400 text-xs uppercase font-bold flex items-center gap-2">
+                            <Activity size={14} /> Win Rate
+                        </div>
+                        <div className="text-2xl font-bold mt-1 text-blue-400">
+                            {winRate}%
+                        </div>
+                    </div>
+
+                    <div className="flex-1 md:w-32 p-4 rounded-xl border bg-purple-500/10 border-purple-500/30">
+                        <div className="text-gray-400 text-xs uppercase font-bold flex items-center gap-2">
+                            <TrendingUp size={14} /> Trades
+                        </div>
+                        <div className="text-2xl font-bold mt-1 text-purple-400">
+                            {tradeCount}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Calendar Controls */}
+            <div className="flex items-center justify-between bg-white/5 border border-white/10 p-4 rounded-xl backdrop-blur-sm">
+                <button onClick={() => setCurrentMonth(subMonths(currentMonth, 1))} className="text-gray-300 hover:text-white hover:bg-white/10 p-2 rounded-lg transition">
+                    &lt; Prev Month
+                </button>
+                <h2 className="text-xl font-bold text-white uppercase tracking-wider">
+                    {format(currentMonth, 'MMMM yyyy')}
+                </h2>
+                <button onClick={() => setCurrentMonth(addMonths(currentMonth, 1))} className="text-gray-300 hover:text-white hover:bg-white/10 p-2 rounded-lg transition">
+                    Next Month &gt;
+                </button>
+            </div>
+
+            {/* Calendar Grid */}
+            <div className="grid grid-cols-7 gap-4">
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
+                    <div key={d} className="text-center text-xs uppercase font-bold text-gray-500 py-2">
+                        {d}
+                    </div>
+                ))}
+
+                {/* Empty Cells for alignment */}
+                {emptyDays.map((_, i) => (
+                    <div key={`empty-${i}`} className="aspect-square bg-transparent"></div>
+                ))}
+
+                {/* Day Cells */}
+                {daysInMonth.map((day) => {
+                    const { trades, pnl, count } = getDayData(day);
+                    const isToday = isSameDay(day, new Date());
+
+                    let bgClass = "bg-[#111] border-white/5"; // Default empty day
+                    let textClass = "text-gray-500";
+
+                    if (count > 0) {
+                        if (pnl > 0) bgClass = "bg-green-500/20 border-green-500/40 hover:bg-green-500/30";
+                        else if (pnl < 0) bgClass = "bg-red-500/20 border-red-500/40 hover:bg-red-500/30";
+                        else bgClass = "bg-gray-700/50 border-gray-500/40"; // Break-even
+                    }
+
+                    if (isToday) bgClass += " ring-2 ring-blue-500";
+
+                    return (
+                        <div
+                            key={day.toString()}
+                            className={`relative aspect-square rounded-xl border p-3 flex flex-col justify-between transition-all group ${bgClass}`}
+                        >
+                            <span className={`text-sm font-bold ${isSameDay(day, new Date()) ? 'text-blue-400' : 'text-gray-400'}`}>
+                                {format(day, 'd')}
+                            </span>
+
+                            {count > 0 ? (
+                                <div className="text-right">
+                                    <div className={`text-lg md:text-xl font-bold ${pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                        {pnl >= 0 ? '+' : ''}₹{Math.abs(pnl).toFixed(0)}
+                                    </div>
+                                    <div className="text-[10px] uppercase text-gray-400 mt-1">
+                                        {count} Trade{count > 1 ? 's' : ''}
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="h-full flex items-center justify-center opacity-0 group-hover:opacity-20 transition-opacity">
+                                    <div className="w-2 h-2 rounded-full bg-gray-500"></div>
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
+
+            {/* List of Trades for the Month (Below Calendar) */}
+            <div className="mt-10">
+                <h3 className="text-xl font-bold text-gray-300 mb-4 flex items-center gap-2">
+                    <TrendingUp className="text-gray-500" size={20} /> Monthly Breakdown
+                </h3>
+                <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden backdrop-blur-sm">
+                    <table className="w-full text-left text-sm">
+                        <thead className="bg-[#111] uppercase text-xs text-gray-400">
+                            <tr>
+                                <th className="px-6 py-4">Date</th>
+                                <th className="px-6 py-4">Symbol</th>
+                                <th className="px-6 py-4 text-right">Qty</th>
+                                <th className="px-6 py-4 text-right">Entry</th>
+                                <th className="px-6 py-4 text-right">Exit</th>
+                                <th className="px-6 py-4 text-right">P&L</th>
+                                <th className="px-6 py-4 text-right">Reason</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/10">
+                            {monthTrades.map((t, i) => (
                                 <tr key={i} className="hover:bg-white/5 transition-colors">
-                                    <td className="px-6 py-4 font-bold text-white max-w-[200px] truncate">{trade.symbol}</td>
-                                    <td className="px-6 py-4">
-                                        <span className={`px-2 py-1 text-xs font-bold rounded ${getGradeColor(grade)}`}>
-                                            {grade}
-                                        </span>
+                                    <td className="px-6 py-4 text-gray-400 font-mono">
+                                        {format(parseISO(t.entry_time), 'MMM d, HH:mm')}
                                     </td>
-                                    <td className="px-6 py-4 text-gray-400 font-mono text-xs">
-                                        {trade.entry_time || '-'}
+                                    <td className="px-6 py-4 font-bold text-white">{t.symbol}</td>
+                                    <td className="px-6 py-4 text-right text-gray-400">{t.qty}</td>
+                                    <td className="px-6 py-4 text-right font-mono text-gray-300">₹{t.entry_price}</td>
+                                    <td className="px-6 py-4 text-right font-mono text-gray-300">₹{t.exit_price}</td>
+                                    <td className={`px-6 py-4 text-right font-bold ${t.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                        {t.pnl >= 0 ? '+' : ''}₹{t.pnl?.toFixed(2)}
                                     </td>
-                                    <td className="px-6 py-4 text-gray-400 font-mono text-xs">
-                                        {trade.exit_time || '-'}
-                                    </td>
-                                    <td className="px-6 py-4 font-mono">₹{trade.entry_price}</td>
-                                    <td className="px-6 py-4 font-mono">₹{trade.exit_price}</td>
-                                    <td className={`px-6 py-4 font-bold ${isWin ? 'text-green-400' : 'text-red-400'}`}>
-                                        {isWin ? '+' : ''}{pnl.toFixed(2)}%
-                                    </td>
-                                    <td className="px-6 py-4 text-xs uppercase tracking-wider text-gray-500">
-                                        {trade.exit_reason || "AUTO"}
+                                    <td className="px-6 py-4 text-right text-xs uppercase text-gray-500">
+                                        {t.exit_reason || t.status}
                                     </td>
                                 </tr>
-                            );
-                        })}
-                        {trades.length === 0 && !loading && (
-                            <tr>
-                                <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
-                                    No closed trades recorded yet.
-                                </td>
-                            </tr>
-                        )}
-                    </tbody>
-                </table>
+                            ))}
+                            {monthTrades.length === 0 && (
+                                <tr>
+                                    <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                                        No trades found for this month.
+                                    </td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     );
