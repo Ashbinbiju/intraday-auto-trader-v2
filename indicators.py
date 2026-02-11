@@ -175,7 +175,8 @@ def check_chop_filter(df):
     for i, row in recent.iterrows():
         close = row['close']
         vwap = row.get('VWAP')
-        if not vwap: continue
+        # FIX: Handle 0.0 correctly (pd.isna allows 0, but rejects NaN/None)
+        if pd.isna(vwap): continue
         
         is_above = close >= vwap
         if was_above is not None and is_above != was_above:
