@@ -183,10 +183,8 @@ def fetch_candle_data(dhan, token, symbol, interval="FIFTEEN_MINUTE", days=5):
              if not time_key:
                  logger.warning(f"Candle Data Missing Time Key. Keys: {raw.keys()}")
                  return None
-        else:
-             logger.warning(f"Candle Fetch Failed for {symbol}. Response: {data}")
-             return None
-                 
+             
+             # SUCCESS PATH: Process Data
              df = pd.DataFrame({
                  'datetime': pd.to_datetime(raw[time_key], unit='s' if isinstance(raw[time_key][0], (int, float)) else None), 
                  'open': raw['open'],
@@ -206,6 +204,10 @@ def fetch_candle_data(dhan, token, symbol, interval="FIFTEEN_MINUTE", days=5):
              df_resampled = df_resampled.reset_index()
              
              return df_resampled
+
+        else:
+             logger.warning(f"Candle Fetch Failed for {symbol}. Response: {data}")
+             return None
 
         return None
 
