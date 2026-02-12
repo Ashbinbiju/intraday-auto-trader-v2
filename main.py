@@ -239,8 +239,8 @@ def calculate_position_size(entry_price, sl_price, balance, risk_pct, max_positi
     qty = int(risk_amount / sl_distance)
     
     # Enforce maximum position size (prevent overexposure)
-    # FIX: Ensure max_position_pct is strictly capped at 20.0
-    safe_max_pos_pct = min(float(max_position_pct), 20.0) 
+    # FIX: Ensure max_position_pct is strictly capped at 50.0 (Testing Mode)
+    safe_max_pos_pct = min(float(max_position_pct), 50.0) 
     
     # === LEVERAGE UPDATE ===
     # Fetch leverage from config (default 1 if not set)
