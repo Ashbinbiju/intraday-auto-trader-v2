@@ -8,15 +8,30 @@ logger = logging.getLogger("WebSocket")
 class ConnectionManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
+        self.MAX_CONNECTIONS = 1 # Strict single-client limit
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
+        
+        # Enforce Limit: Close oldest connection if limit reached
+        if len(self.active_connections) >= self.MAX_CONNECTIONS:
+            oldest_ws = self.active_connections[0]
+            try:
+                await oldest_ws.close(code=1000, reason="New connection replaced old one")
+                self.active_connections.remove(oldest_ws)
+                logger.info("⚠️ Closed old WebSocket connection to accept new one.")
+            except Exception as e:
+                logger.warning(f"Error closing old WS: {e}")
+                if oldest_ws in self.active_connections:
+                    self.active_connections.remove(oldest_ws)
+
         self.active_connections.append(websocket)
         logger.info(f"WebSocket Client Connected. Total: {len(self.active_connections)}")
 
     def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
-        logger.info(f"WebSocket Client Disconnected. Total: {len(self.active_connections)}")
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+            logger.info(f"WebSocket Client Disconnected. Total: {len(self.active_connections)}")
 
     async def broadcast(self, message: dict):
         # Filter out closed connections if any

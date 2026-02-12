@@ -784,6 +784,14 @@ def run_bot_loop(async_loop=None, ws_manager=None):
     pm_thread = threading.Thread(target=run_position_manager, args=(dhan, token_map), daemon=True)
     pm_thread.start()
 
+    # 4. Start Dhan Order WebSocket (Real-time Updates)
+    try:
+        logger.info("Initializing Dhan Order WebSocket...")
+        from dhan_websocket import start_dhan_websocket
+        start_dhan_websocket(BOT_STATE)
+    except Exception as e:
+        logger.error(f"Failed to start Dhan Order WebSocket: {e}")
+
     try:
         while True:
             logger.info("Starting Main Loop Iteration...")
