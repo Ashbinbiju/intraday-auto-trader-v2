@@ -16,7 +16,8 @@ class RateLimiter:
     def __init__(self, calls_per_second=2):
         self.interval = 1.0 / calls_per_second
         self.last_call = 0
-        self.lock = logging.Threading.Lock() if hasattr(logging, 'Threading') else logging.threading.Lock()
+        import threading
+        self.lock = threading.Lock()
 
     def wait(self):
         with self.lock:
@@ -28,11 +29,11 @@ class RateLimiter:
 
 # --- RATE LIMITERS ---
 # Based on Dhan API Documentation:
-# Data APIs (Candles): 5 req/s
+# Data APIs (Candles): 5 req/s (Reduced to 2 req/s to stop 429 errors)
 # Quote APIs (LTP, Ticker): 1 req/s
 # Order APIs (Place, Modify): 10 req/s
 
-data_limiter = RateLimiter(calls_per_second=5)
+data_limiter = RateLimiter(calls_per_second=2)
 quote_limiter = RateLimiter(calls_per_second=1)
 order_limiter = RateLimiter(calls_per_second=10)
 
