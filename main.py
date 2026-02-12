@@ -1025,6 +1025,39 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                         
                                         logger.info(f"✅ 15M Bias Confirmed: {symbol} | {bias_reason}")
                                         
+                                        # STEP 1.5: S/R Resistance Check (New)
+                                        # Use the 15m data (multi-day) to find PDH/CDH
+                                        from indicators import calculate_sr_levels
+                                        sr_levels = calculate_sr_levels(df_15m_recheck)
+                                        
+                                        nearest_res = None
+                                        
+                                        if sr_levels:
+                                            pdh_val = sr_levels.get('PDH', 0)
+                                            cdh_val = sr_levels.get('CDH', 0)
+                                            
+                                            # Identify Resistances ABOVE Current Price
+                                            resistances = []
+                                            if pdh_val > price: resistances.append(pdh_val)
+                                            if cdh_val > price: resistances.append(cdh_val)
+                                            
+                                            if resistances:
+                                                nearest_res = min(resistances)
+                                                
+                                                # Rule 1: Resistance Proximity
+                                                # Threshold: 0.25% (Safety)
+                                                dist_pct = (nearest_res - price) / price * 100
+                                                
+                                                if dist_pct < 0.25:
+                                                    logger.warning(f"❌ Trade REJECTED: {symbol} | Too close to Resistance (Res: {nearest_res:.2f}, Dist: {dist_pct:.2f}% < 0.25%)")
+                                                    continue
+                                                else:
+                                                    logger.info(f"✅ S/R Check Pass: Distance to Res {dist_pct:.2f}% (> 0.25%)")
+                                            else:
+                                                logger.info(f"🚀 Blue Sky Breakout: {symbol} price {price} > PDH/CDH (No Overhead Resistance)")
+                                        else:
+                                            logger.warning(f"⚠️ S/R Data Unavailable for {symbol}, proceeding with caution.")
+                                        
                                         # STEP 2: Fetch 5-minute candles for structure analysis
                                         df_risk = fetch_candle_data(smartApi, token, symbol, "FIVE_MINUTE")
                                         
@@ -1057,8 +1090,23 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                             logger.warning(f"❌ Trade REJECTED: {symbol} | Reason: {sl_reason}")
                                             continue
                                         
-                                        # Get PDH from bot state (if available)
-                                        pdh = BOT_STATE.get("previous_day_high", {}).get(symbol)
+                                        # Rule 2: Reward Space (R:R to Resistance)
+                                        # Only applies if there IS a resistance overhead.
+                                        if nearest_res:
+                                            risk = price - sl_price
+                                            reward_space = nearest_res - price
+                                            
+                                            if risk > 0:
+                                                rr_to_res = reward_space / risk
+                                                
+                                                if rr_to_res < 1.2:
+                                                    logger.warning(f"❌ Trade REJECTED: {symbol} | Low Reward Space to Res ({rr_to_res:.2f}R < 1.2R)")
+                                                    continue
+                                                else:
+                                                    logger.info(f"✅ S/R Reward Check Pass: {rr_to_res:.2f}R to Res (> 1.2R)")
+
+                                        # Update PDH for TP calculation (prefer calculated value)
+                                        pdh = pdh_val if 'pdh_val' in locals() and pdh_val > 0 else BOT_STATE.get("previous_day_high", {}).get(symbol)
                                         
                                         # Calculate structure-based TP
                                         target_price, tp_reason, rr_ratio = calculate_structure_based_tp(

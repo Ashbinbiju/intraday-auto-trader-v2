@@ -202,3 +202,53 @@ def check_chop_filter(df):
              return False, f"Weak/Negative Trend (EMA Slope {slope_pct:.3f}% < 0.05%)"
 
     return True, "Trend Clean"
+
+def calculate_sr_levels(df):
+    """
+    Calculates Previous Day High/Low (PDH, PDL) and Current Day High/Low (CDH, CDL).
+    Expects df to have 'datetime', 'high', 'low' columns.
+    Returns dict or None if insufficient data.
+    """
+    if df is None or df.empty:
+        return None
+        
+    try:
+        # Avoid SettingWithCopyWarning
+        df = df.copy()
+        
+        # Ensure datetime is datetime object
+        if 'datetime' not in df.columns:
+             if isinstance(df.index, pd.DatetimeIndex):
+                 df = df.reset_index()
+             else:
+                 return None
+             
+        # Check if actually datetime64
+        if not pd.api.types.is_datetime64_any_dtype(df['datetime']):
+             df['datetime'] = pd.to_datetime(df['datetime'], errors='coerce')
+        
+        # Drop rows where datetime parsing failed
+        df = df.dropna(subset=['datetime'])
+             
+        df['date'] = df['datetime'].dt.date
+        
+        # Group by Date to get Daily Highs/Lows
+        daily_ohlc = df.groupby('date').agg({'high': 'max', 'low': 'min'})
+        
+        if len(daily_ohlc) < 2:
+            return None # Need at least 2 days (Prev + Current)
+            
+        # Get Previous Day (Second Last Row) 
+        # Note: If current day is partial, it's the last row. Previous day is second last.
+        prev_day = daily_ohlc.iloc[-2]
+        curr_day = daily_ohlc.iloc[-1]
+        
+        return {
+            "PDH": prev_day['high'],
+            "PDL": prev_day['low'],
+            "CDH": curr_day['high'],
+            "CDL": curr_day['low']
+        }
+    except Exception as e:
+        # Logging not available here
+        return None
