@@ -270,12 +270,18 @@ def calculate_position_size(entry_price, sl_price, balance, risk_pct, max_positi
     exposure_pct = (exposure / balance) * 100
     actual_risk_pct = (actual_risk / balance) * 100
     
+    # Calculate Margin Used (Actual cash blocked)
+    margin_used = exposure / leverage
+    buying_power = balance * leverage
+    
     # 4️⃣ FIX 5: Comprehensive logging
     logger.info(
         f"📊 Position Sizing | {symbol} | "
-        f"Bal=₹{balance:,.0f} | Risk={risk_pct}% (₹{risk_amount:,.0f}) | "
+        f"Bal=₹{balance:,.0f} | Lev={leverage}x (BP=₹{buying_power:,.0f}) | "
+        f"Risk={risk_pct}% (₹{risk_amount:,.0f}) | "
         f"SL={sl_distance:.2f} ({sl_distance_pct:.2f}%) | "
-        f"Qty={qty} | Exposure=₹{exposure:,.0f} ({exposure_pct:.1f}%) | "
+        f"Qty={qty} | Exposure=₹{exposure:,.0f} | "
+        f"Margin Used=₹{margin_used:,.0f} | "
         f"Actual Risk=₹{actual_risk:,.0f} ({actual_risk_pct:.2f}%)"
     )
     
@@ -1120,11 +1126,35 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                             if risk > 0:
                                                 rr_to_res = reward_space / risk
                                                 
+                                                # New R:R Logic (Refined)
+                                                # 1. Strict Reject if < 1.2
                                                 if rr_to_res < 1.2:
-                                                    logger.warning(f"❌ Trade REJECTED: {symbol} | Low Reward Space to Res ({rr_to_res:.2f}R < 1.2R)")
+                                                    logger.warning(f"❌ Trade REJECTED: {symbol} | Low Reward to Res ({rr_to_res:.2f}R < 1.2R)")
                                                     continue
+                                                
+                                                # 2. Confirmation Zone (1.2 - 1.5)
+                                                elif 1.2 <= rr_to_res < 1.5:
+                                                    # Require Extra Strength: Volume > 1.8x OR Breakout > CDH
+                                                    current_vol = latest_candle.get('volume', 0)
+                                                    avg_vol = df_risk['volume'].mean()
+                                                    vol_ratio = current_vol / avg_vol if avg_vol > 0 else 0
+                                                    
+                                                    is_high_vol = vol_ratio > 1.8
+                                                    # Check if price broke CDH (Blue Sky) - closest approx using SR levels
+                                                    is_breakout = False
+                                                    if sr_levels:
+                                                        cdh_level = sr_levels.get('CDH', 999999)
+                                                        if price > cdh_level:
+                                                            is_breakout = True
+                                                    
+                                                    if is_high_vol or is_breakout:
+                                                        logger.info(f"✅ Low R:R Accepted ({rr_to_res:.2f}R) due to Strength: Vol={vol_ratio:.1f}x or Breakout={is_breakout}")
+                                                    else:
+                                                        logger.warning(f"❌ Trade REJECTED: {symbol} | Low R:R ({rr_to_res:.2f}R) & Weak Confirmation (Vol {vol_ratio:.1f}x < 1.8x, No Breakout)")
+                                                        continue
+                                                
                                                 else:
-                                                    logger.info(f"✅ S/R Reward Check Pass: {rr_to_res:.2f}R to Res (> 1.2R)")
+                                                    logger.info(f"✅ S/R Reward Check Pass: {rr_to_res:.2f}R to Res (> 1.5R)")
 
                                         # Update PDH for TP calculation (prefer calculated value)
                                         pdh = pdh_val if 'pdh_val' in locals() and pdh_val > 0 else BOT_STATE.get("previous_day_high", {}).get(symbol)
@@ -1166,6 +1196,21 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                         if quantity <= 0:
                                             logger.warning(f"❌ Trade SKIPPED: {symbol} | Position sizing returned qty=0")
                                             continue
+                                            
+                                        # New Rule: Min Actual Risk Check
+                                        # Actual Risk % = (Qty * SL_Dist_Amt) / Balance
+                                        risk_amt = quantity * (price - sl_price)
+                                        actual_risk_pct = (risk_amt / balance) * 100 if balance > 0 else 0
+                                        
+                                        # Threshold: Safety=0.5%, Trend=0.35%
+                                        regime = BOT_STATE.get("market_regime", "SAFETY_MODE")
+                                        min_risk_threshold = 0.5 if regime == "SAFETY_MODE" else 0.35
+                                        
+                                        if actual_risk_pct < min_risk_threshold:
+                                            logger.warning(f"❌ Trade REJECTED: {symbol} | Actual Risk too low ({actual_risk_pct:.2f}% < {min_risk_threshold}%) - Not worth capital lock.")
+                                            continue
+                                            
+                                        logger.info(f"✅ Risk Check Passed: Actual Risk {actual_risk_pct:.2f}% (>= {min_risk_threshold}%)")
                                     else:
                                         # Fixed quantity mode (backwards compatible)
                                         quantity = config_manager.get("general", "quantity") or 1
