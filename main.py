@@ -357,14 +357,14 @@ def calculate_structure_based_sl(df, entry_price, vwap, ema20):
         vwap_dist = ((entry_price - vwap_sl_price) / entry_price) * 100
         
         if vwap_sl_price < entry_price and vwap_dist <= max_sl_distance and vwap_dist >= dynamic_min_sl:
-            return vwap_sl_price, f"SL_FALLBACK: SwingLow too wide ({sl_distance_pct:.2f}%), using VWAP SL ({vwap_dist:.2f}%)", vwap_dist
+            return vwap_sl_price, f"SL_FALLBACK: SwingLow {sl_distance_pct:.2f}% too wide -> Using VWAP SL {vwap_dist:.2f}%", vwap_dist
 
         # 2. Try EMA20 SL
         ema_sl_price = ema20 * (1 - fb_buffer)
         ema_dist = ((entry_price - ema_sl_price) / entry_price) * 100
         
         if ema_sl_price < entry_price and ema_dist <= max_sl_distance and ema_dist >= dynamic_min_sl:
-            return ema_sl_price, f"SL_FALLBACK: SwingLow too wide ({sl_distance_pct:.2f}%), using EMA20 SL ({ema_dist:.2f}%)", ema_dist
+            return ema_sl_price, f"SL_FALLBACK: SwingLow {sl_distance_pct:.2f}% too wide -> Using EMA20 SL {ema_dist:.2f}%", ema_dist
             
         # If both fail -> REJECT
         return None, f"SL too wide ({sl_distance_pct:.2f}%) & Fallbacks invalid", sl_distance_pct
