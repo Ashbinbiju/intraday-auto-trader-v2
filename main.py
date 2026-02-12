@@ -344,9 +344,30 @@ def calculate_structure_based_sl(df, entry_price, vwap, ema20):
     if sl_distance_pct < dynamic_min_sl:
         return None, f"SL too tight ({sl_distance_pct:.2f}% < {dynamic_min_sl:.2f}%) - wick risk", sl_distance_pct
     
-    # Safety Check: Reject if SL > 2% away
+    # ----------------------------------------------------
+    # SL FALLBACK LOGIC (Tightening if Swing Low > 2.0%)
+    # ----------------------------------------------------
     if sl_distance_pct > max_sl_distance:
-        return None, f"SL too wide ({sl_distance_pct:.2f}%)", sl_distance_pct
+        # Swing Low SL is too wide. Try Fallbacks.
+        # Fallback Buffer: 0.10% (0.001)
+        fb_buffer = 0.001
+        
+        # 1. Try VWAP SL
+        vwap_sl_price = vwap * (1 - fb_buffer)
+        vwap_dist = ((entry_price - vwap_sl_price) / entry_price) * 100
+        
+        if vwap_sl_price < entry_price and vwap_dist <= max_sl_distance and vwap_dist >= dynamic_min_sl:
+            return vwap_sl_price, f"SL_FALLBACK: SwingLow too wide ({sl_distance_pct:.2f}%), using VWAP SL ({vwap_dist:.2f}%)", vwap_dist
+
+        # 2. Try EMA20 SL
+        ema_sl_price = ema20 * (1 - fb_buffer)
+        ema_dist = ((entry_price - ema_sl_price) / entry_price) * 100
+        
+        if ema_sl_price < entry_price and ema_dist <= max_sl_distance and ema_dist >= dynamic_min_sl:
+            return ema_sl_price, f"SL_FALLBACK: SwingLow too wide ({sl_distance_pct:.2f}%), using EMA20 SL ({ema_dist:.2f}%)", ema_dist
+            
+        # If both fail -> REJECT
+        return None, f"SL too wide ({sl_distance_pct:.2f}%) & Fallbacks invalid", sl_distance_pct
     
     return best_sl, f"{reason} ({sl_distance_pct:.2f}%)", sl_distance_pct
 
