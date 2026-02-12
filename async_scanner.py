@@ -293,12 +293,12 @@ class AsyncScanner:
                                     else:
                                         logger.warning(f"⚠️ {symbol}: Token not found for LTP fetch")
                                     if live_ltp is None or live_ltp == 0:
-                                        # Fallback to scraper price if Dhan API fails
-                                        live_ltp = stock_info['ltp'] if stock_info else 0.0
-                                        logger.warning(f"⚠️ {symbol}: Using scraper price (Dhan LTP failed)")
+                                        logger.error(f"❌ {symbol}: LTP_UNAVAILABLE (Dhan Fetch Failed). Skipping.")
+                                        continue # MANDATORY SAFETY RULE
+
                                 except Exception as e:
-                                    logger.error(f"❌ {symbol}: LTP fetch error: {e}")
-                                    live_ltp = stock_info['ltp'] if stock_info else 0.0
+                                    logger.error(f"❌ {symbol}: LTP fetch error: {e}. Skipping.")
+                                    continue # MANDATORY SAFETY RULE
 
                                 # Add signal (MUST be inside if buy_signal block)
                                 signals.append({
