@@ -348,6 +348,19 @@ def fetch_market_feed_bulk(dhan, tokens):
                  logger.warning(f"⚠️ Bulk Fetch Success but Result Empty. Raw Data: {data}")
         else:
              logger.warning(f"Bulk Fetch Failed. Payload: {securities} | Response: {resp}")
+             
+             # FALLBACK: Try fetching individually
+             # This handles cases where one token is bad or the bulk endpoint is acting up.
+             # Note: This will be slower (1 req/s) but safer.
+             logger.info("⚠️ Attempting Fallback: Fetching tokens individually...")
+             fallback_result = {}
+             for t in tokens:
+                 # We don't have the symbol name here, so use token ID as label
+                 ltp = fetch_ltp(dhan, t, f"Token_{t}")
+                 if ltp is not None:
+                     fallback_result[str(t)] = ltp
+             
+             return fallback_result
                  
         return result
         
