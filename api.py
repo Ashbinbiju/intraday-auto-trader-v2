@@ -176,10 +176,11 @@ async def close_position(symbol: str):
             pos['exit_time'] = datetime.now().isoformat()
             
             # Log to DB
-            from database import log_trade_to_db
-            trade_log = pos.copy()
-            trade_log['pnl'] = (current_ltp - entry_price) * pos['qty']
-            threading.Thread(target=log_trade_to_db, args=(trade_log,)).start()
+            from database import log_trade_execution
+            from config import config_manager
+            
+            leverage = config_manager.get("position_sizing", "leverage_equity") or 1.0
+            log_trade_execution(pos, current_ltp, "MANUAL_CLOSE", leverage)
             
             save_state(BOT_STATE)
             

@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { BookOpen, Calendar, TrendingUp, TrendingDown, DollarSign, Activity } from 'lucide-react';
+import { BookOpen, Calendar, TrendingUp, TrendingDown, DollarSign, Activity, X } from 'lucide-react';
 import {
     startOfMonth,
     endOfMonth,
@@ -21,6 +21,7 @@ export default function JournalPage() {
     const [trades, setTrades] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [currentMonth, setCurrentMonth] = useState(new Date());
+    const [selectedTrade, setSelectedTrade] = useState<any>(null);
 
     useEffect(() => {
         fetchHistory();
@@ -209,7 +210,11 @@ export default function JournalPage() {
                         </thead>
                         <tbody className="divide-y divide-white/10">
                             {monthTrades.map((t, i) => (
-                                <tr key={i} className="hover:bg-white/5 transition-colors">
+                                <tr
+                                    key={i}
+                                    onClick={() => setSelectedTrade(t)}
+                                    className="hover:bg-white/5 transition-colors cursor-pointer"
+                                >
                                     <td className="px-6 py-4 text-gray-400 font-mono">
                                         {format(parseISO(t.entry_time), 'MMM d, HH:mm')}
                                     </td>
@@ -236,6 +241,74 @@ export default function JournalPage() {
                     </table>
                 </div>
             </div>
+            {/* Trade Details Modal */}
+            {selectedTrade && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setSelectedTrade(null)}>
+                    <div
+                        className="bg-[#0a0a0a] border border-white/10 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl relative animate-in zoom-in-95 duration-200"
+                        onClick={e => e.stopPropagation()}
+                    >
+
+                        {/* Header */}
+                        <div className="flex items-center justify-between p-6 border-b border-white/5 bg-white/5">
+                            <div>
+                                <h3 className="text-2xl font-bold text-white tracking-tight">{selectedTrade.symbol}</h3>
+                                <div className="text-sm text-gray-400 font-mono mt-1 flex items-center gap-2">
+                                    <Calendar size={12} />
+                                    {format(parseISO(selectedTrade.entry_time), 'PPp')}
+                                </div>
+                            </div>
+                            <button onClick={() => setSelectedTrade(null)} className="p-2 hover:bg-white/10 rounded-full transition-colors text-gray-400 hover:text-white">
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        {/* Content */}
+                        <div className="p-6 space-y-6">
+
+                            {/* P&L Hero */}
+                            <div className={`text-center p-6 rounded-xl border ${selectedTrade.pnl >= 0 ? 'bg-green-500/10 border-green-500/20' : 'bg-red-500/10 border-red-500/20'}`}>
+                                <div className="text-xs uppercase font-bold text-gray-400 mb-2 tracking-wider">Net P&L</div>
+                                <div className={`text-5xl font-bold tracking-tighter ${selectedTrade.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                    {selectedTrade.pnl >= 0 ? '+' : ''}₹{selectedTrade.pnl?.toFixed(2)}
+                                </div>
+                            </div>
+
+                            {/* Grid Details */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="p-4 bg-white/5 rounded-xl border border-white/5 hover:border-white/10 transition-colors">
+                                    <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Entry Price</div>
+                                    <div className="font-mono text-xl text-white">₹{selectedTrade.entry_price}</div>
+                                </div>
+                                <div className="p-4 bg-white/5 rounded-xl border border-white/5 hover:border-white/10 transition-colors">
+                                    <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Exit Price</div>
+                                    <div className="font-mono text-xl text-white">₹{selectedTrade.exit_price}</div>
+                                </div>
+                                <div className="p-4 bg-white/5 rounded-xl border border-white/5 hover:border-white/10 transition-colors">
+                                    <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Quantity</div>
+                                    <div className="font-mono text-xl text-white">{selectedTrade.qty}</div>
+                                </div>
+                                <div className="p-4 bg-white/5 rounded-xl border border-white/5 hover:border-white/10 transition-colors">
+                                    <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Invested</div>
+                                    <div className="font-mono text-xl text-white">₹{(selectedTrade.entry_price * selectedTrade.qty).toFixed(0)}</div>
+                                </div>
+                            </div>
+
+                            {/* Status / Reason */}
+                            <div className="p-4 bg-white/5 rounded-xl border border-white/5">
+                                <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Exit Reason</div>
+                                <div className="text-sm text-gray-300 font-medium flex items-center gap-2">
+                                    <span className="px-2 py-0.5 rounded-full bg-white/10 text-xs border border-white/10">
+                                        {selectedTrade.status}
+                                    </span>
+                                    {selectedTrade.exit_reason}
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

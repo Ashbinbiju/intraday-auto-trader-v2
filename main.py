@@ -511,10 +511,8 @@ def manage_positions(smartApi, token_map):
                         pos['exit_reason'] = "TIME_EXIT"
                         
                         # LOG TO SUPABASE
-                        trade_log = pos.copy()
-                        trade_log['pnl'] = (exit_price - pos['entry_price']) * pos['qty']
-                        trade_log['exit_time'] = datetime.datetime.now().isoformat()
-                        threading.Thread(target=log_trade_to_db, args=(trade_log,)).start()
+                        leverage = config_manager.get("position_sizing", "leverage_equity") or 1.0
+                        log_trade_execution(pos, exit_price, "TIME_EXIT", leverage)
 
                         save_state(BOT_STATE)
                 continue
@@ -558,10 +556,8 @@ def manage_positions(smartApi, token_map):
                     pos['exit_reason'] = "STOP_LOSS"
                     
                     # LOG TO SUPABASE
-                    trade_log = pos.copy()
-                    trade_log['pnl'] = (current_ltp - entry_price) * pos['qty']
-                    trade_log['exit_time'] = datetime.datetime.now().isoformat()
-                    threading.Thread(target=log_trade_to_db, args=(trade_log,)).start()
+                    leverage = config_manager.get("position_sizing", "leverage_equity") or 1.0
+                    log_trade_execution(pos, current_ltp, "STOP_LOSS", leverage)
 
                     save_state(BOT_STATE) 
                     continue
@@ -603,10 +599,8 @@ def manage_positions(smartApi, token_map):
                                 pos['exit_reason'] = "TECH_EXIT"
                                 
                                 # LOG TO SUPABASE
-                                trade_log = pos.copy()
-                                trade_log['pnl'] = (current_ltp - entry_price) * pos['qty']
-                                trade_log['exit_time'] = datetime.datetime.now().isoformat()
-                                threading.Thread(target=log_trade_to_db, args=(trade_log,)).start()
+                                leverage = config_manager.get("position_sizing", "leverage_equity") or 1.0
+                                log_trade_execution(pos, current_ltp, f"TECH_EXIT ({exit_reason})", leverage)
 
                                 save_state(BOT_STATE)
                                 continue
@@ -631,10 +625,8 @@ def manage_positions(smartApi, token_map):
                         pos['exit_reason'] = "TIME_EXIT"
                         
                         # LOG TO SUPABASE
-                        trade_log = pos.copy()
-                        trade_log['pnl'] = (current_ltp - entry_price) * pos['qty']
-                        trade_log['exit_time'] = datetime.datetime.now().isoformat()
-                        threading.Thread(target=log_trade_to_db, args=(trade_log,)).start()
+                        leverage = config_manager.get("position_sizing", "leverage_equity") or 1.0
+                        log_trade_execution(pos, current_ltp, "TIME_EXIT", leverage)
 
                         save_state(BOT_STATE)
                         continue
@@ -642,6 +634,11 @@ def manage_positions(smartApi, token_map):
 
         except Exception as e:
             logger.error(f"Error managing position {symbol}: {e}")
+
+        except Exception as e:
+            logger.error(f"Error managing position {symbol}: {e}")
+
+from database import log_trade_execution
 
 def reconcile_state(smartApi):
     """

@@ -156,3 +156,39 @@ def log_market_movers_to_db(movers_data):
             
     except Exception as e:
         logger.error(f"❌ Error logging market movers to DB: {e}")
+
+def log_trade_execution(pos, exit_price, exit_reason, leverage=1.0):
+    """
+    Centralized helper to calculate financial metrics and log trade to DB.
+    THREAD-SAFE & ASYNC-CAPABLE.
+    """
+    try:
+        trade_log = pos.copy()
+        
+        # Calculate P&L
+        qty = int(pos.get('qty', 0))
+        entry_price = float(pos.get('entry_price', 0))
+        pnl = (exit_price - entry_price) * qty
+        
+        # Calculate Financials
+        investment_amount = entry_price * qty
+        margin_used = investment_amount / leverage if leverage > 0 else investment_amount
+        
+        # Enrich Trade Log
+        trade_log['pnl'] = pnl
+        trade_log['exit_price'] = exit_price
+        trade_log['exit_reason'] = exit_reason
+        trade_log['exit_time'] = datetime.now().isoformat()
+        
+        # Add Extra Metadata for Analytics
+        trade_log['investment_amount'] = investment_amount
+        trade_log['margin_used'] = margin_used
+        trade_log['leverage'] = leverage
+        
+        # Log to Database (Async spawn)
+        threading.Thread(target=log_trade_to_db, args=(trade_log,)).start()
+        
+        logger.info(f"📝 Trade Logged: {pos.get('symbol')} | P&L: ₹{pnl:,.2f} | Reason: {exit_reason} | Margin: ₹{margin_used:,.0f} | Lev: {leverage}x")
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to prepare trade log: {e}")
