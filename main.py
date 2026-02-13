@@ -562,6 +562,22 @@ def manage_positions(smartApi, token_map):
                     save_state(BOT_STATE) 
                     continue
 
+                # 1.5 TARGET/TAKE PROFIT (Book Profits)
+                target_price = pos.get('target')
+                if target_price and current_ltp >= target_price:
+                    logger.info(f"🎯 {symbol} Hit TARGET at {current_ltp} (Target: {target_price})")
+                    place_sell_order(smartApi, symbol, token, pos['qty'], reason="TARGET_HIT")
+                    pos['status'] = "CLOSED"
+                    pos['exit_price'] = current_ltp
+                    pos['exit_reason'] = "TARGET_HIT"
+                    
+                    # LOG TO SUPABASE
+                    leverage = config_manager.get("position_sizing", "leverage_equity") or 1.0
+                    log_trade_execution(pos, current_ltp, "TARGET_HIT", leverage)
+
+                    save_state(BOT_STATE)
+                    continue
+
                 # 1.5 BREAKEVEN LOCK (Enhancement)
                 # If Price moved +1R (Risk), Move SL to Entry
                 original_sl = pos.get('original_sl', sl_price)
