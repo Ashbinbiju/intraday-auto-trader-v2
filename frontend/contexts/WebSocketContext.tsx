@@ -86,11 +86,16 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         // Initial Connect
         connect();
 
-        // Reconnect on Tab Focus
+        // Reconnect on Tab Focus (ONLY if disconnected)
         const handleVisibilityChange = () => {
             if (document.visibilityState === 'visible') {
-                console.log("Tab Active: Checking WebSocket...");
-                connect();
+                // Only reconnect if actually disconnected
+                if (!ws.current || ws.current.readyState === WebSocket.CLOSED || ws.current.readyState === WebSocket.CLOSING) {
+                    console.log("Tab Active: Reconnecting WebSocket...");
+                    connect();
+                } else {
+                    console.log("Tab Active: WebSocket still connected. Skipping reconnect.");
+                }
             } else {
                 // Clear reconnect timeout when tab is hidden
                 if (reconnectTimeoutRef.current) {
