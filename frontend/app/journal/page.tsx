@@ -22,6 +22,7 @@ export default function JournalPage() {
     const [loading, setLoading] = useState(true);
     const [currentMonth, setCurrentMonth] = useState(new Date());
     const [selectedTrade, setSelectedTrade] = useState<any>(null);
+    const [selectedDay, setSelectedDay] = useState<Date | null>(null);
 
     useEffect(() => {
         fetchHistory();
@@ -165,7 +166,12 @@ export default function JournalPage() {
                     return (
                         <div
                             key={day.toString()}
-                            className={`relative aspect-square rounded-xl border p-3 flex flex-col justify-between transition-all group ${bgClass}`}
+                            onClick={() => {
+                                if (count > 0) {
+                                    setSelectedDay(day);
+                                }
+                            }}
+                            className={`relative aspect-square rounded-xl border p-3 flex flex-col justify-between transition-all group ${bgClass} ${count > 0 ? 'cursor-pointer' : 'cursor-default'}`}
                         >
                             <span className={`text-sm font-bold ${isSameDay(day, new Date()) ? 'text-blue-400' : 'text-gray-400'}`}>
                                 {format(day, 'd')}
@@ -306,6 +312,75 @@ export default function JournalPage() {
                             </div>
                         </div>
 
+                    </div>
+                </div>
+            )}
+
+            {/* Day Trades Modal - Shows all trades for selected day */}
+            {selectedDay && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setSelectedDay(null)}>
+                    <div
+                        className="bg-[#0a0a0a] border border-white/10 rounded-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden shadow-2xl relative animate-in zoom-in-95 duration-200"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        {/* Header */}
+                        <div className="flex items-center justify-between p-6 border-b border-white/5 bg-white/5">
+                            <div>
+                                <h3 className="text-2xl font-bold text-white tracking-tight">
+                                    {format(selectedDay, 'MMMM d, yyyy')}
+                                </h3>
+                                <div className="text-sm text-gray-400 mt-1">
+                                    {getDayData(selectedDay).count} Trade{getDayData(selectedDay).count > 1 ? 's' : ''}
+                                </div>
+                            </div>
+                            <button onClick={() => setSelectedDay(null)} className="p-2 hover:bg-white/10 rounded-full transition-colors text-gray-400 hover:text-white">
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        {/* Daily P&L Summary */}
+                        <div className={`p-6 border-b border-white/5 ${getDayData(selectedDay).pnl >= 0 ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
+                            <div className="text-xs uppercase font-bold text-gray-400 mb-2 tracking-wider">Daily P&L</div>
+                            <div className={`text-4xl font-bold tracking-tighter ${getDayData(selectedDay).pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                {getDayData(selectedDay).pnl >= 0 ? '+' : ''}₹{getDayData(selectedDay).pnl.toFixed(2)}
+                            </div>
+                        </div>
+
+                        {/* Trade List */}
+                        <div className="overflow-y-auto max-h-[400px] p-6 space-y-3">
+                            {getDayData(selectedDay).trades.map((t: any, i: number) => (
+                                <div
+                                    key={i}
+                                    onClick={() => {
+                                        setSelectedDay(null);
+                                        setSelectedTrade(t);
+                                    }}
+                                    className="bg-white/5 border border-white/10 rounded-xl p-4 hover:bg-white/10 transition-all cursor-pointer group"
+                                >
+                                    <div className="flex justify-between items-start mb-2">
+                                        <div>
+                                            <div className="font-bold text-white text-lg">{t.symbol}</div>
+                                            <div className="text-xs text-gray-400 font-mono">
+                                                {format(parseISO(t.entry_time), 'HH:mm')} → {t.exit_time ? format(parseISO(t.exit_time), 'HH:mm') : 'Open'}
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            <div className={`text-xl font-bold ${t.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                                {t.pnl >= 0 ? '+' : ''}₹{t.pnl?.toFixed(2)}
+                                            </div>
+                                            <div className="text-xs text-gray-500">Qty: {t.qty}</div>
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-between text-xs text-gray-400">
+                                        <span>Entry: ₹{t.entry_price}</span>
+                                        <span>Exit: ₹{t.exit_price}</span>
+                                    </div>
+                                    <div className="mt-2 text-xs text-gray-500 uppercase">
+                                        {t.exit_reason || t.status}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 </div>
             )}
