@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Shield, Target, TrendingUp, XCircle, AlertTriangle, Wifi, WifiOff, CheckCircle } from 'lucide-react';
-import { useWebSocket } from '@/hooks/useWebSocket';
+import { useWebSocketContext } from '@/contexts/WebSocketContext';
 
 import { getBaseUrl } from '@/lib/api';
 import { MarketData, Position } from '@/types';
@@ -15,7 +15,7 @@ interface CardProps {
 }
 
 export default function TradesPage() {
-    const { data: wsData, isConnected } = useWebSocket();
+    const { data: wsData, isConnected } = useWebSocketContext();
     const [localData, setLocalData] = useState<MarketData | null>(null);
     const [processing, setProcessing] = useState<string | null>(null);
 

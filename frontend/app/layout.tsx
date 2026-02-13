@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Sidebar from "@/components/Sidebar";
 import MobileNavbar from "@/components/MobileNavbar";
+import { WebSocketProvider } from "@/contexts/WebSocketContext";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -29,13 +30,15 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <div className="flex bg-black min-h-screen text-white pb-20 md:pb-0">
-          <Sidebar />
-          <MobileNavbar />
-          <main className="ml-0 md:ml-64 flex-1 p-4 md:p-8 overflow-y-auto min-h-screen">
-            {children}
-          </main>
-        </div>
+        <WebSocketProvider>
+          <div className="flex bg-black min-h-screen text-white pb-20 md:pb-0">
+            <Sidebar />
+            <MobileNavbar />
+            <main className="ml-0 md:ml-64 flex-1 p-4 md:p-8 overflow-y-auto min-h-screen">
+              {children}
+            </main>
+          </div>
+        </WebSocketProvider>
       </body>
     </html>
   );

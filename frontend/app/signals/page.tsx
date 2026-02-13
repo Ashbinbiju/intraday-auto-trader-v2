@@ -4,7 +4,7 @@ import axios from 'axios';
 import { ArrowRight, AlertCircle, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 
 import { getBaseUrl } from '@/lib/api';
-import { useWebSocket } from '@/hooks/useWebSocket';
+import { useWebSocketContext } from '@/contexts/WebSocketContext';
 import { Signal } from '@/types';
 
 export default function SignalsPage() {
@@ -12,7 +12,7 @@ export default function SignalsPage() {
     const [currentPage, setCurrentPage] = useState(1);
     const signalsPerPage = 20;
 
-    const { data: wsData, isConnected } = useWebSocket();
+    const { data: wsData, isConnected } = useWebSocketContext();
     const [signals, setSignals] = useState<Signal[]>([]);
 
     const [audio] = useState(typeof Audio !== "undefined" ? new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3') : null);
