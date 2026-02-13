@@ -192,6 +192,17 @@ def floor_to_lot_size(qty, symbol):
     # If you trade F&O later, add lot size mapping here
     return int(qty) # Do NOT force max(1, qty) as it overrides risk limits!
 
+
+def get_leverage():
+    """
+    Centralized helper to get leverage from config.
+    Handles None properly (returns 1.0 as default).
+    Prevents inconsistent behavior when leverage is 0.
+    """
+    leverage_raw = config_manager.get("position_sizing", "leverage_equity")
+    return leverage_raw if leverage_raw is not None else 1.0
+
+
 def calculate_position_size(entry_price, sl_price, balance, risk_pct, max_position_pct, min_sl_pct, symbol):
     """
     Calculates dynamic position size with all safety checks.
@@ -244,11 +255,10 @@ def calculate_position_size(entry_price, sl_price, balance, risk_pct, max_positi
     
     # === LEVERAGE UPDATE ===
     # Fetch leverage from config (default 1 if not set)
-    leverage_raw = config_manager.get("position_sizing", "leverage_equity")
-    leverage = leverage_raw if leverage_raw is not None else 1.0
+    leverage = get_leverage()
     
     # DEBUG: Log what we actually got from config
-    logger.info(f"🔍 DEBUG Leverage: config_raw={leverage_raw}, final={leverage}")
+    logger.info(f"🔍 DEBUG Leverage: final={leverage}")
     
     # Calculate Buying Power = Cash * Leverage
     # Max Amount per Trade = Buying Power * (max_pos_pct / 100)
@@ -515,7 +525,7 @@ def manage_positions(smartApi, token_map):
                         pos['exit_reason'] = "TIME_EXIT"
                         
                         # LOG TO SUPABASE
-                        leverage = config_manager.get("position_sizing", "leverage_equity") or 1.0
+                        leverage = get_leverage()
                         log_trade_execution(pos, exit_price, "TIME_EXIT", leverage)
 
                         save_state(BOT_STATE)
@@ -560,7 +570,7 @@ def manage_positions(smartApi, token_map):
                     pos['exit_reason'] = "STOP_LOSS"
                     
                     # LOG TO SUPABASE
-                    leverage = config_manager.get("position_sizing", "leverage_equity") or 1.0
+                    leverage = get_leverage()
                     log_trade_execution(pos, current_ltp, "STOP_LOSS", leverage)
 
                     save_state(BOT_STATE) 
@@ -576,7 +586,7 @@ def manage_positions(smartApi, token_map):
                     pos['exit_reason'] = "TARGET_HIT"
                     
                     # LOG TO SUPABASE
-                    leverage = config_manager.get("position_sizing", "leverage_equity") or 1.0
+                    leverage = get_leverage()
                     log_trade_execution(pos, current_ltp, "TARGET_HIT", leverage)
 
                     save_state(BOT_STATE)
@@ -619,7 +629,7 @@ def manage_positions(smartApi, token_map):
                                 pos['exit_reason'] = "TECH_EXIT"
                                 
                                 # LOG TO SUPABASE
-                                leverage = config_manager.get("position_sizing", "leverage_equity") or 1.0
+                                leverage = get_leverage()
                                 log_trade_execution(pos, current_ltp, f"TECH_EXIT ({exit_reason})", leverage)
 
                                 save_state(BOT_STATE)
@@ -645,7 +655,7 @@ def manage_positions(smartApi, token_map):
                         pos['exit_reason'] = "TIME_EXIT"
                         
                         # LOG TO SUPABASE
-                        leverage = config_manager.get("position_sizing", "leverage_equity") or 1.0
+                        leverage = get_leverage()
                         log_trade_execution(pos, current_ltp, "TIME_EXIT", leverage)
 
                         save_state(BOT_STATE)
