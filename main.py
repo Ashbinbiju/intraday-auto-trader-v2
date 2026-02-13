@@ -244,7 +244,11 @@ def calculate_position_size(entry_price, sl_price, balance, risk_pct, max_positi
     
     # === LEVERAGE UPDATE ===
     # Fetch leverage from config (default 1 if not set)
-    leverage = config_manager.get("position_sizing", "leverage_equity") or 1.0
+    leverage_raw = config_manager.get("position_sizing", "leverage_equity")
+    leverage = leverage_raw if leverage_raw is not None else 1.0
+    
+    # DEBUG: Log what we actually got from config
+    logger.info(f"🔍 DEBUG Leverage: config_raw={leverage_raw}, final={leverage}")
     
     # Calculate Buying Power = Cash * Leverage
     # Max Amount per Trade = Buying Power * (max_pos_pct / 100)
