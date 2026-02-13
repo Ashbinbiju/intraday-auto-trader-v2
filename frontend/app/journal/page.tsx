@@ -212,7 +212,10 @@ export default function JournalPage() {
                             {monthTrades.map((t, i) => (
                                 <tr
                                     key={i}
-                                    onClick={() => setSelectedTrade(t)}
+                                    onClick={() => {
+                                        console.log('Trade clicked:', t);
+                                        setSelectedTrade(t);
+                                    }}
                                     className="hover:bg-white/5 transition-colors cursor-pointer"
                                 >
                                     <td className="px-6 py-4 text-gray-400 font-mono">
