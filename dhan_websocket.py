@@ -97,7 +97,8 @@ def start_dhan_websocket(bot_state):
             
             with state_lock:
                 # 1. Update Order History
-                if 'orders' not in bot_state: bot_state['orders'] = {}
+                if 'orders' not in bot_state:
+                    bot_state['orders'] = {}
                 
                 # Check if we are tracking this order
                 if order_id in bot_state['orders']:
