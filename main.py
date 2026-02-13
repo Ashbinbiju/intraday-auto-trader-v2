@@ -196,11 +196,10 @@ def floor_to_lot_size(qty, symbol):
 def get_leverage():
     """
     Centralized helper to get leverage from config.
-    Handles None properly (returns 1.0 as default).
-    Prevents inconsistent behavior when leverage is 0.
+    Defaults to 1.0 if None or <= 0 (prevents ZeroDivisionError and no-trade scenarios).
     """
     leverage_raw = config_manager.get("position_sizing", "leverage_equity")
-    return leverage_raw if leverage_raw is not None else 1.0
+    return leverage_raw if leverage_raw and leverage_raw > 0 else 1.0
 
 
 def calculate_position_size(entry_price, sl_price, balance, risk_pct, max_position_pct, min_sl_pct, symbol):
