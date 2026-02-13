@@ -71,12 +71,12 @@ def start_dhan_websocket(bot_state):
     """
     Start Dhan Order Update WebSocket.
     Updates BOT_STATE with real-time order status.
-    """
-    # Apply monkey-patch to fix concatenated JSON issue
-    _patch_dhan_websocket()
     
-    client_id = config_manager.get("credentials", "dhan_client_id")
-    access_token = config_manager.get("credentials", "dhan_access_token")
+    TEMPORARILY DISABLED: Monkey-patch approach not working on Render.
+    Order status updates still work via REST API polling in main loop.
+    """
+    logger.info("ℹ️  Dhan Order WebSocket disabled (monkey-patch unsuccessful)")
+    return None
     
     if not client_id or not access_token:
         logger.error("❌ Credentials Missing. Skipping WebSocket.")
