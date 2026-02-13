@@ -116,6 +116,7 @@ def check_and_reset_daily_signals(state):
             state["total_trades_today"] = 0
             state["stock_trade_counts"] = {}
             state["signals"] = [] # Clear daily signals
+            state["reconciliation_done_today"] = False # Reset reconciliation flag
             
             # 2. Clear CLOSED positions from previous days
             # (Keep OPEN positions intact)

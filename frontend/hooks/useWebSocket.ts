@@ -26,7 +26,11 @@ export function useWebSocket() {
         fetchInitialState();
 
         const connect = () => {
-            if (ws.current && ws.current.readyState === WebSocket.OPEN) return;
+            // Prevent multiple connections: Check if socket exists and is OPEN or CONNECTING
+            if (ws.current && (ws.current.readyState === WebSocket.OPEN || ws.current.readyState === WebSocket.CONNECTING)) {
+                console.log("WebSocket already connected/connecting. Skipping.");
+                return;
+            }
 
             const url = getWsUrl();
             const socket = new WebSocket(url);
@@ -71,6 +75,7 @@ export function useWebSocket() {
         const handleVisibilityChange = () => {
             if (document.visibilityState === 'visible') {
                 console.log("Tab Active: Checking WebSocket...");
+                // connect() now has proper guard, safe to call
                 connect();
             }
         };

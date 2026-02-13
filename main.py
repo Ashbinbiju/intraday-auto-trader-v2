@@ -815,11 +815,22 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                 
                 # ... (Rest of logic) ...
                 
-                # --- Reconciliation (Only in Live Mode) ---
+                # --- Daily Signal Reset (Also resets reconciliation flag) ---
+                from state_manager import check_and_reset_daily_signals
+                check_and_reset_daily_signals(BOT_STATE)
+                # --------------------------
+                
+                # --- Reconciliation (Only Once Per Day in Live Mode) ---
                 dry_run = config_manager.get("general", "dry_run") or False
-                if SMART_API_SESSION and not dry_run:
+                reconciliation_done = BOT_STATE.get("reconciliation_done_today", False)
+                
+                if SMART_API_SESSION and not dry_run and not reconciliation_done:
+                     logger.info("🔄 Running Daily Reconciliation...")
                      success = reconcile_state(SMART_API_SESSION)
-                     if not success:
+                     if success:
+                         BOT_STATE["reconciliation_done_today"] = True
+                         save_state(BOT_STATE)
+                     else:
                          logger.warning("Reconciliation Failed. Attempting to Re-Authenticate...")
                          new_session = get_dhan_session()
                          if new_session:
@@ -829,7 +840,10 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                          else:
                              logger.error("Session Re-authentication Failed. Will retry next cycle.")
                 elif dry_run:
-                    # Dry Run Mode
+                    # Dry Run Mode - Skip reconciliation
+                    pass
+                elif reconciliation_done:
+                    # Already reconciled today
                     pass
                 
                 # ----------------------
