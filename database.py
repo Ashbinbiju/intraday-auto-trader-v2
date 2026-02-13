@@ -160,7 +160,7 @@ def log_market_movers_to_db(movers_data):
 def log_trade_execution(pos, exit_price, exit_reason, leverage=1.0):
     """
     Centralized helper to calculate financial metrics and log trade to DB.
-    THREAD-SAFE & ASYNC-CAPABLE.
+    SYNCHRONOUS to guarantee data persistence before position is cleared.
     """
     try:
         trade_log = pos.copy()
@@ -185,10 +185,10 @@ def log_trade_execution(pos, exit_price, exit_reason, leverage=1.0):
         trade_log['margin_used'] = margin_used
         trade_log['leverage'] = leverage
         
-        # Log to Database (Async spawn)
-        threading.Thread(target=log_trade_to_db, args=(trade_log,)).start()
+        # Log to Database SYNCHRONOUSLY (blocking to prevent data loss)
+        log_trade_to_db(trade_log)
         
         logger.info(f"📝 Trade Logged: {pos.get('symbol')} | P&L: ₹{pnl:,.2f} | Reason: {exit_reason} | Margin: ₹{margin_used:,.0f} | Lev: {leverage}x")
         
     except Exception as e:
-        logger.error(f"❌ Failed to prepare trade log: {e}")
+        logger.error(f"❌ Failed to log trade: {e}")
