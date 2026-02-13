@@ -53,8 +53,29 @@ class OrderSocket:
             print(f"Sent subscribe message: {auth_message}")
 
             async for message in websocket:
-                data = json.loads(message)
-                await self.handle_order_update(data)
+                # Dhan sends multiple JSON objects concatenated without separators
+                # Example: {"Type":"login"}{"Type":"order_alert"}
+                # We need to parse them individually
+                try:
+                    decoder = json.JSONDecoder()
+                    idx = 0
+                    while idx < len(message):
+                        message = message.strip()
+                        if not message:
+                            break
+                        try:
+                            data, end_idx = decoder.raw_decode(message, idx)
+                            await self.handle_order_update(data)
+                            idx = end_idx
+                            # Skip whitespace
+                            while idx < len(message) and message[idx].isspace():
+                                idx += 1
+                        except json.JSONDecodeError as e:
+                            print(f"JSON decode error at index {idx}: {e}")
+                            break
+                except Exception as e:
+                    print(f"Error processing message: {e}")
+
 
     async def handle_order_update(self, order_update):
         """
