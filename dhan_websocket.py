@@ -38,12 +38,13 @@ def _patch_dhan_websocket():
                 async for message in websocket:
                     # Handle multiple concatenated JSON objects
                     try:
+                        message_str = message.strip()
+                        if not message_str:
+                            continue
+                        
                         decoder = json.JSONDecoder()
                         idx = 0
-                        while idx < len(message):
-                            message_str = message.strip()
-                            if not message_str:
-                                break
+                        while idx < len(message_str):
                             try:
                                 data, end_idx = decoder.raw_decode(message_str, idx)
                                 await self.handle_order_update(data)
