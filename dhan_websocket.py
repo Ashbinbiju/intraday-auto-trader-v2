@@ -33,7 +33,7 @@ def _patch_dhan_websocket():
                 }
                 
                 await websocket.send(json.dumps(auth_message))
-                logger.info(f"✅ Dhan WebSocket authenticated")
+                logger.info("✅ Dhan WebSocket authenticated")
                 
                 async for message in websocket:
                     # Handle multiple concatenated JSON objects
@@ -53,6 +53,8 @@ def _patch_dhan_websocket():
                                 while idx < len(message_str) and message_str[idx].isspace():
                                     idx += 1
                             except json.JSONDecodeError:
+                                if idx < len(message_str):
+                                    logger.debug(f"Unparsed data remaining at idx {idx}: {message_str[idx:idx+50]!r}...")
                                 break
                     except (TypeError, AttributeError) as e:
                         logger.error(f"JSON parse error: {e}")
