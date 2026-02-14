@@ -1,39 +1,40 @@
 {
-    "risk": {
-        "stop_loss_pct": 0.01,
-        "target_pct": 0.02,
-        "trail_be_trigger": 0.012
-    },
-    "limits": {
-        "max_trades_per_day": 2,
-        "max_trades_per_stock": 3,
-        "trading_start_time": "09:20",
-        "trading_end_time": "15:15",
-        "square_off_time": "15:15"
-    },
-    "general": {
-        "quantity": 1,
-        "check_interval": 300,
-        "dry_run": false,
-        "strategy_mode": "SECTOR_MOMENTUM"
-    },
-    "position_sizing": {
-        "mode": "dynamic",
-        "risk_per_trade_pct": 1.0,
-        "max_position_size_pct": 100.0,
-        "min_sl_distance_pct": 0.6,
-        "paper_trading_balance": 100000.0
-    },
-    "credentials": {
-        "dhan_client_id": "1107793529",
-        "dhan_access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzcxMDA2MDM1LCJpYXQiOjE3NzA5MTk2MzUsInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTA3NzkzNTI5In0.ij_3V1QepUMrTxIGi70QH1RduGZfcydV-vMQTksWdUgoFr1Q29gfy1Mtul23kCvEtGRxzvPq8tgJ8XRyXWTC2g",
-        "smart_api_api_key": "ruseeaBq"
-    },
-    "structure_risk": {
-        "sl_buffer_pct": 0.002,
-        "min_risk_reward": 1.5,
-        "max_sl_distance_pct": 2.0,
-        "min_sl_distance_pct": 0.8,
-        "use_structure_based": true
-    }
+    "risk":  {
+                 "stop_loss_pct":  0.01,
+                 "target_pct":  0.02,
+                 "trail_be_trigger":  0.012
+             },
+    "limits":  {
+                   "max_trades_per_day":  2,
+                   "max_trades_per_stock":  3,
+                   "trading_start_time":  "09:20",
+                   "trading_end_time":  "15:15",
+                   "square_off_time":  "15:15"
+               },
+    "general":  {
+                    "quantity":  1,
+                    "check_interval":  300,
+                    "dry_run":  false,
+                    "strategy_mode":  "SECTOR_MOMENTUM"
+                },
+    "position_sizing":  {
+                            "mode":  "dynamic",
+                            "risk_per_trade_pct":  1.0,
+                            "max_position_size_pct":  50,
+                            "min_sl_distance_pct":  0.6,
+                            "paper_trading_balance":  100000.0,
+                            "leverage_equity":  5
+                        },
+    "credentials":  {
+                        "dhan_client_id":  "1107793529",
+                        "dhan_access_token":  "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzcxMDA2MDM1LCJpYXQiOjE3NzA5MTk2MzUsInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTA3NzkzNTI5In0.ij_3V1QepUMrTxIGi70QH1RduGZfcydV-vMQTksWdUgoFr1Q29gfy1Mtul23kCvEtGRxzvPq8tgJ8XRyXWTC2g",
+                        "smart_api_api_key":  "ruseeaBq"
+                    },
+    "structure_risk":  {
+                           "sl_buffer_pct":  0.002,
+                           "min_risk_reward":  1.5,
+                           "max_sl_distance_pct":  2.0,
+                           "min_sl_distance_pct":  0.8,
+                           "use_structure_based":  true
+                       }
 }
