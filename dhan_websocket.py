@@ -56,8 +56,8 @@ def start_dhan_websocket(bot_state):
                     price = data.get('tradedPrice', data.get('price', 0))
                     logger.info(f"✅ Trade Executed: {symbol} | Qty: {qty} @ ₹{price}")
             
-        except Exception as e:
-            logger.exception(f"Error processing order update: {e}")
+        except Exception:
+            logger.exception("Error processing order update")
 
     def run_order_socket():
         """Main WebSocket loop with auto-reconnect"""
@@ -68,8 +68,12 @@ def start_dhan_websocket(bot_state):
             try:
                 logger.info("🔄 Connecting to Dhan Order WebSocket...")
                 order_ws.connect_to_dhan_websocket_sync()
-            except Exception as e:
-                logger.error(f"❌ WebSocket Disconnected: {e}. Retrying in 5s...")
+                # If connection exits normally, wait before reconnecting
+                # to prevent duplicate/overlapping connections
+                logger.warning("⚠️ WebSocket connection closed normally. Reconnecting in 5s...")
+                time.sleep(5)
+            except Exception:
+                logger.exception("❌ WebSocket Disconnected. Retrying in 5s...")
                 time.sleep(5)
 
     t = threading.Thread(target=run_order_socket, daemon=True, name="DhanOrderSocket")
