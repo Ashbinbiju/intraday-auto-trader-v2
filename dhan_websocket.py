@@ -39,6 +39,11 @@ def start_dhan_websocket(bot_state):
                 return  # Skip if no order ID
             
             with state_lock:
+                # Update Heartbeat
+                if 'heartbeat' not in bot_state:
+                    bot_state['heartbeat'] = {}
+                bot_state['heartbeat']['websocket'] = time.time()
+
                 # Update Order History
                 if 'orders' not in bot_state:
                     bot_state['orders'] = {}
@@ -48,13 +53,24 @@ def start_dhan_websocket(bot_state):
                     bot_state['orders'][order_id] = {}
                 
                 bot_state['orders'][order_id].update(data)
-                logger.info(f"⚡ WS Update: {symbol} Order {order_id} → {status}")
                 
-                # Handle TRADED (Fill)
+                # Simplify Status for Logging
+                log_status = status
                 if status == "TRADED":
                     qty = data.get('filledQty', data.get('quantity', 0))
                     price = data.get('tradedPrice', data.get('price', 0))
-                    logger.info(f"✅ Trade Executed: {symbol} | Qty: {qty} @ ₹{price}")
+                    log_status = f"TRADED {qty} @ ₹{price}"
+                
+                logger.info(f"⚡ WS Update: {symbol} Order {order_id} → {log_status}")
+
+                # Cleanup Pending Orders on Final State
+                if status in ["FILLED", "TRADED", "REJECTED", "CANCELLED", "EXPIRED"]:
+                    pending = bot_state.get('pending_orders', {})
+                    to_remove = [k for k, v in pending.items() if v.get('order_id') == order_id]
+                    
+                    for cid in to_remove:
+                        logger.info(f"✅ Cleared Pending Order {cid} via WebSocket ({status})")
+                        pending.pop(cid, None)
             
         except Exception as e:
             logger.exception(f"Error processing order update: {e}")

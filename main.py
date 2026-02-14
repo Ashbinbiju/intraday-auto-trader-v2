@@ -31,9 +31,9 @@ class LogBufferHandler(logging.Handler):
                     BOT_STATE["logs"] = []
                 BOT_STATE["logs"].append(log_entry)
                 
-                # Keep only last 100 logs (Prevent Bloat)
-                if len(BOT_STATE["logs"]) > 100:
-                    BOT_STATE["logs"] = BOT_STATE["logs"][-100:]
+                # Keep only last 500 logs (Increased for better debugging)
+                if len(BOT_STATE["logs"]) > 500:
+                    BOT_STATE["logs"] = BOT_STATE["logs"][-500:]
         except Exception:
             self_instance.handleError(record)
 
@@ -675,19 +675,31 @@ def manage_positions(smartApi, token_map):
                 else:
                     logger.warning(f"Could not fetch LTP for TIME_EXIT. Using 0.")
                 
+                exit_qty = 0
                 with state_lock:
                     pos = BOT_STATE["positions"].get(symbol)
-                    if pos and pos["status"] == "OPEN":
-                        place_sell_order_with_retry(smartApi, symbol, token, pos['qty'], reason="TIME_EXIT")
-                        pos['status'] = "CLOSED"
-                        pos['exit_price'] = exit_price  # Actual market price
-                        pos['exit_reason'] = "TIME_EXIT"
+                    if pos and pos["status"] == "OPEN" and not pos.get("exit_in_progress"):
+                        pos["exit_in_progress"] = True
+                        pos["exit_requested_ts"] = time.time()
+                        exit_qty = pos['qty']
+                
+                if exit_qty > 0:
+                    order_id = place_sell_order_with_retry(smartApi, symbol, token, exit_qty, reason="TIME_EXIT")
+                    
+                    with state_lock:
+                        pos = BOT_STATE["positions"].get(symbol)
+                        if pos: pos["exit_in_progress"] = False # Reset flag
                         
-                        # LOG TO SUPABASE
-                        leverage = get_leverage()
-                        log_trade_execution(pos, exit_price, "TIME_EXIT", leverage)
-
-                        save_state(BOT_STATE)
+                        if pos and order_id:
+                            pos['status'] = "CLOSED"
+                            pos['exit_price'] = exit_price  # Actual market price
+                            pos['exit_reason'] = "TIME_EXIT"
+                            save_state(BOT_STATE)
+                    
+                    if order_id:
+                         # LOG TO SUPABASE (Outside lock to prevent blocking)
+                         leverage = get_leverage()
+                         log_trade_execution(BOT_STATE["positions"].get(symbol), exit_price, "TIME_EXIT", leverage)
                 continue
 
             # Current LTP Logic (Bulk Only - No Fallback)
@@ -703,123 +715,113 @@ def manage_positions(smartApi, token_map):
                 continue
 
             # ... (Rest of existing logic) ...
+            # PRE-CALCULATE TECHNICAL INDICATORS (Outside Lock)
+            # Fetching candles is an API call - must be done before acquiring lock
+            tech_breakdown = False
+            tech_reason_str = ""
+            try:
+                df_tech = fetch_candle_data(smartApi, token, symbol, "FIVE_MINUTE")
+                if df_tech is not None:
+                    df_tech = calculate_indicators(df_tech)
+                    
+                if df_tech is not None and not df_tech.empty and len(df_tech) >= 2:
+                    confirmed_candle = df_tech.iloc[-2]
+                    close_price = confirmed_candle['close'] 
+                    ema_20 = confirmed_candle.get('EMA_20')
+                    vwap = confirmed_candle.get('VWAP')
+                    
+                    if ema_20 and vwap and not pd.isna(ema_20) and not pd.isna(vwap):
+                        # DUAL CONFIRMATION: Price must close below BOTH indicators
+                        if close_price < ema_20 and close_price < vwap:
+                            tech_breakdown = True
+                            tech_reason_str = f"Dual Breakdown (Close {close_price} < EMA {ema_20:.2f} & VWAP {vwap:.2f})"
+            except Exception as e_tech:
+                 logger.warning(f"Technical Exit Check failed for {symbol}: {e_tech}")
+
+            # DECISION PHASE (Atomically check conditions)
+            exit_action = None # (reason_code, qty, exit_reason_log)
+            
             with state_lock:
                 pos = BOT_STATE["positions"].get(symbol)
                 
-                # Check if still valid and OPEN (might have been closed by API/User)
-                if not pos or pos["status"] != "OPEN":
-                    continue
+                # Check validity & exit_in_progress
+                if not pos or pos["status"] != "OPEN": continue
+                if pos.get("exit_in_progress"): continue
 
                 entry_price = pos['entry_price']
                 sl_price = pos['sl']
-                # target_price = pos['target'] # DISABLED Fixed Target
+                target_price = pos.get('target')
                 
-                # UPDATE HIGHEST LTP (For Trailing/Breakeven)
-                pos['current_ltp'] = current_ltp  # Store current price for frontend display
+                # UPDATE HIGHEST LTP
+                pos['current_ltp'] = current_ltp
                 if current_ltp > pos.get('highest_ltp', 0):
                     pos['highest_ltp'] = current_ltp
 
-                # ------------------- EXIT LOGIC PRIORITY -------------------
-                # 1. HARD STOP LOSS (Safety Net)
+                # 1. HARD STOP LOSS
                 if current_ltp <= sl_price:
                     logger.info(f"{symbol} Hit STOP LOSS at {current_ltp} (SL: {sl_price})")
-                    place_sell_order_with_retry(smartApi, symbol, token, pos['qty'], reason="STOP_LOSS")
-                    pos['status'] = "CLOSED"
-                    pos['exit_price'] = current_ltp
-                    pos['exit_reason'] = "STOP_LOSS"
-                    
-                    # LOG TO SUPABASE
-                    leverage = get_leverage()
-                    log_trade_execution(pos, current_ltp, "STOP_LOSS", leverage)
+                    exit_action = ("STOP_LOSS", pos['qty'], "STOP_LOSS")
+                    pos["exit_in_progress"] = True
+                    pos["exit_requested_ts"] = time.time()
 
-                    save_state(BOT_STATE) 
-                    continue
-
-                # 1.5 TARGET/TAKE PROFIT (Book Profits)
-                target_price = pos.get('target')
-                if target_price and current_ltp >= target_price:
+                # 2. TARGET/TAKE PROFIT
+                elif target_price and current_ltp >= target_price:
                     logger.info(f"🎯 {symbol} Hit TARGET at {current_ltp} (Target: {target_price})")
-                    place_sell_order_with_retry(smartApi, symbol, token, pos['qty'], reason="TARGET_HIT")
-                    pos['status'] = "CLOSED"
-                    pos['exit_price'] = current_ltp
-                    pos['exit_reason'] = "TARGET_HIT"
-                    
-                    # LOG TO SUPABASE
-                    leverage = get_leverage()
-                    log_trade_execution(pos, current_ltp, "TARGET_HIT", leverage)
+                    exit_action = ("TARGET_HIT", pos['qty'], "TARGET_HIT")
+                    pos["exit_in_progress"] = True
+                    pos["exit_requested_ts"] = time.time()
 
-                    save_state(BOT_STATE)
-                    continue
+                # 3. TECHNICAL EXIT (Using pre-calculated flag)
+                elif tech_breakdown:
+                    logger.info(f"📉 {symbol} Technical Exit: {tech_reason_str}.")
+                    exit_action = ("TECH_EXIT", pos['qty'], f"TECH_EXIT ({tech_reason_str})")
+                    pos["exit_in_progress"] = True
+                    pos["exit_requested_ts"] = time.time()
 
-                # 1.5 BREAKEVEN LOCK (Enhancement)
-                # If Price moved +1R (Risk), Move SL to Entry
-                original_sl = pos.get('original_sl', sl_price)
-                risk_per_share = entry_price - original_sl
-                if risk_per_share > 0 and not pos.get('is_breakeven_active'):
-                    target_move = entry_price + risk_per_share # +1R
-                    if pos['highest_ltp'] >= target_move:
-                        logger.info(f"🔒 Breakeven Triggered for {symbol}. Moving SL to {entry_price}")
-                        pos['sl'] = entry_price * 1.001 # Slightly above to cover brokerage
-                        pos['is_breakeven_active'] = True
-                        save_state(BOT_STATE)
-                        # We don't continue, checks proceed with new SL
-
-                # 2. TRAILING TECHNICAL EXIT (Strict Candle Close)
-                # Rule: Exit if Closed Price < EMA20 AND Closed Price < VWAP (Dual Confirmation)
-                try:
-                    df_tech = fetch_candle_data(smartApi, token, symbol, "FIVE_MINUTE")
-                    if df_tech is not None:
-                        df_tech = calculate_indicators(df_tech)
+                # 4. TIME-BASED STAGNATION EXIT
+                else:
+                    entry_ts = pos.get('entry_time_ts')
+                    if entry_ts:
+                        duration_minutes = (time.time() - entry_ts) / 60
+                        current_profit_pct = (current_ltp - entry_price) / entry_price
                         
-                    if df_tech is not None and not df_tech.empty and len(df_tech) >= 2:
-                        confirmed_candle = df_tech.iloc[-2]
-                        close_price = confirmed_candle['close'] 
-                        ema_20 = confirmed_candle.get('EMA_20')
-                        vwap = confirmed_candle.get('VWAP')
-                        
-                        if ema_20 and vwap and not pd.isna(ema_20) and not pd.isna(vwap):
-                            # DUAL CONFIRMATION: Price must close below BOTH indicators
-                            if close_price < ema_20 and close_price < vwap:
-                                exit_reason = f"Dual Breakdown (Close {close_price} < EMA {ema_20:.2f} & VWAP {vwap:.2f})"
-                                logger.info(f"📉 {symbol} Technical Exit: {exit_reason}.")
-                                place_sell_order_with_retry(smartApi, symbol, token, pos['qty'], reason="TECH_EXIT")
-                                pos['status'] = "CLOSED"
-                                pos['exit_price'] = current_ltp 
-                                pos['exit_reason'] = "TECH_EXIT"
-                                
-                                # LOG TO SUPABASE
-                                leverage = get_leverage()
-                                log_trade_execution(pos, current_ltp, f"TECH_EXIT ({exit_reason})", leverage)
+                        if duration_minutes > 60 and current_profit_pct < 0.005: 
+                            logger.info(f"💤 Time Exit: {symbol} Stagnant for {int(duration_minutes)}m. Closing.")
+                            exit_action = ("TIME_EXIT", pos['qty'], "TIME_EXIT")
+                            pos["exit_in_progress"] = True
+                            pos["exit_requested_ts"] = time.time()
+                
+                # 5. BREAKEVEN LOCK (If no exit)
+                if not exit_action:
+                    original_sl = pos.get('original_sl', sl_price)
+                    risk_per_share = entry_price - original_sl
+                    if risk_per_share > 0 and not pos.get('is_breakeven_active'):
+                        target_move = entry_price + risk_per_share 
+                        if pos['highest_ltp'] >= target_move:
+                            logger.info(f"🔒 Breakeven Triggered for {symbol}. Moving SL to {entry_price}")
+                            pos['sl'] = entry_price * 1.001 
+                            pos['is_breakeven_active'] = True
+                            save_state(BOT_STATE)
 
-                                save_state(BOT_STATE)
-                                continue
-
-                except Exception as e_tech:
-                     logger.warning(f"Technical Exit Check failed for {symbol}: {e_tech}")
-
-                # 3. TIME-BASED STAGNATION EXIT (Intraday Reality)
-                # If Trade > 60 mins AND Profit < 0.5% -> Exit
-                # This frees up capital from zombie trades.
-                entry_ts = pos.get('entry_time_ts')
-                if entry_ts:
-                    duration_seconds = time.time() - entry_ts
-                    duration_minutes = duration_seconds / 60
-                    current_profit_pct = (current_ltp - entry_price) / entry_price
+            # EXECUTION PHASE (Outside Lock)
+            if exit_action:
+                reason_code, qty, reason_log = exit_action
+                order_id = place_sell_order_with_retry(smartApi, symbol, token, qty, reason=reason_code)
+                
+                with state_lock:
+                    pos = BOT_STATE["positions"].get(symbol)
+                    if pos: pos["exit_in_progress"] = False # Reset flag
                     
-                    if duration_minutes > 60 and current_profit_pct < 0.005: # < 0.5% gain after 1 hour
-                        logger.info(f"💤 Time Exit: {symbol} Stagnant for {int(duration_minutes)}m. Closing.")
-                        place_sell_order_with_retry(smartApi, symbol, token, pos['qty'], reason="TIME_EXIT")
+                    if pos and order_id:
                         pos['status'] = "CLOSED"
                         pos['exit_price'] = current_ltp 
-                        pos['exit_reason'] = "TIME_EXIT"
-                        
-                        # LOG TO SUPABASE
-                        leverage = get_leverage()
-                        log_trade_execution(pos, current_ltp, "TIME_EXIT", leverage)
-
+                        pos['exit_reason'] = reason_code
                         save_state(BOT_STATE)
-                        continue
-
+                
+                if order_id:
+                    # LOG TO SUPABASE (Outside lock)
+                    leverage = get_leverage()
+                    log_trade_execution(BOT_STATE["positions"].get(symbol), current_ltp, reason_log, leverage)
 
         except Exception as e:
             logger.error(f"Error managing position {symbol}: {e}")
@@ -930,23 +932,27 @@ def reconcile_positions_quick(smartApi):
                 if symbol not in BOT_STATE["positions"] or BOT_STATE["positions"][symbol]["status"] != "OPEN":
                     logger.warning(f"⚠️ Orphan detected: {symbol} (Qty: {data['qty']}). Importing...")
                     
-                    # Import with safe defaults
-                    sl_pct = config_manager.get("risk", "stop_loss_pct") or 0.01
-                    tp_pct = config_manager.get("risk", "target_pct") or 0.02
+                    # CRITICAL: Use EMERGENCY SL (tight) to prevent blow-up
+                    # Config defaults might be too wide for unknown positions
+                    emergency_sl_pct = 0.008  # 0.8% for equity (conservative)
+                    emergency_tp_pct = 0.02   # 2% target (optimistic)
+                    
+                    logger.warning(f"🚨 Applying EMERGENCY SL: {emergency_sl_pct*100}% for orphan {symbol}")
                     
                     BOT_STATE["positions"][symbol] = {
                         "symbol": symbol,
                         "entry_price": data['avg_price'],
                         "qty": data['qty'],
-                        "sl": data['avg_price'] * (1 - sl_pct),
-                        "target": data['avg_price'] * (1 + tp_pct),
-                        "original_sl": data['avg_price'] * (1 - sl_pct),
+                        "sl": data['avg_price'] * (1 - emergency_sl_pct),
+                        "target": data['avg_price'] * (1 + emergency_tp_pct),
+                        "original_sl": data['avg_price'] * (1 - emergency_sl_pct),
                         "highest_ltp": data['avg_price'],
                         "status": "OPEN",
                         "entry_time": "RECONCILED",
                         "entry_time_ts": time.time(),
                         "is_breakeven_active": False,
-                        "is_orphaned": True
+                        "is_orphaned": True,
+                        "exit_in_progress": False  # Initialize exit tracking
                     }
                     
         save_state(BOT_STATE)
@@ -996,6 +1002,9 @@ def run_bot_loop(async_loop=None, ws_manager=None):
         logger.info("🚀 Starting Real-Time Position Manager Thread...")
         while BOT_STATE.get("is_running", True):
             try:
+                # Update Heartbeat
+                BOT_STATE.setdefault("heartbeat", {})["position_manager"] = time.time()
+                
                 # Run every 5 seconds for fast updates
                 manage_positions(api_session, t_map)
                 
@@ -1046,6 +1055,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
         time.sleep(10)  # Initial delay to let bot initialize
         while BOT_STATE.get("is_running", True):
             try:
+                BOT_STATE.setdefault("heartbeat", {})["reconciliation"] = time.time()
                 reconcile_positions_quick(smartApi)
                 time.sleep(60)  # Every 60 seconds
             except Exception as e:
@@ -1061,6 +1071,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
         time.sleep(60)  # Initial delay
         while BOT_STATE.get("is_running", True):
             try:
+                BOT_STATE.setdefault("heartbeat", {})["cleanup"] = time.time()
                 cleanup_pending_orders(smartApi)
                 time.sleep(300)  # Every 5 minutes
             except Exception as e:
@@ -1070,6 +1081,43 @@ def run_bot_loop(async_loop=None, ws_manager=None):
     cleanup_thread = threading.Thread(target=run_cleanup_loop, daemon=True, name="Cleanup")
     cleanup_thread.start()
     logger.info("✅ Pending Order Cleanup started (5min interval)")
+
+    # 3.7. Start Heartbeat Watchdog (Safety System)
+    def run_heartbeat_watchdog():
+        """
+        Monitors health of critical threads.
+        Stops trading if any thread stalls > 120s.
+        """
+        time.sleep(30) # Initial warmup delay
+        logger.info("🛡️ Heartbeat Watchdog Active")
+        
+        while BOT_STATE.get("is_running", True):
+            try:
+                current_time = time.time()
+                heartbeats = BOT_STATE.get("heartbeat", {})
+                
+                # Check critical threads
+                critical_threads = ["position_manager", "reconciliation", "websocket"]
+                
+                for thread_name in critical_threads:
+                    last_beat = heartbeats.get(thread_name, 0)
+                    # Ignore if last_beat is 0 (thread might not have started or updated yet?)
+                    # No, threads update immediately. 
+                    # Use a stricter check? If 0, it's suspicious after warmup.
+                    
+                    if last_beat > 0 and (current_time - last_beat) > 120:
+                        logger.critical(f"🚨 CRITICAL: Thread '{thread_name}' stalled! Last heartbeat {int(current_time - last_beat)}s ago.")
+                        logger.critical("🛑 STOPPING NEW ENTRIES (Circuit Breaker Triggered)")
+                        BOT_STATE["is_trading_allowed"] = False
+                        # We don't stop the bot process to ensure we can still manage exiting positions if possible.
+                        
+                time.sleep(60) # Check every minute
+            except Exception as e:
+                logger.error(f"Watchdog Error: {e}")
+                time.sleep(60)
+
+    watchdog_thread = threading.Thread(target=run_heartbeat_watchdog, daemon=True, name="Watchdog")
+    watchdog_thread.start()
 
     # 4. Start Dhan Order WebSocket (Real-time Updates)
     try:
