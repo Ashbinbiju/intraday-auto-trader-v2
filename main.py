@@ -82,10 +82,13 @@ start_auto_save(BOT_STATE, interval=60)
 def generate_correlation_id(symbol, action):
     """
     Generates unique correlation ID for order tracking.
-    Format: SYMBOL_YYYYMMDD_HHMMSS_ACTION
+    Format: SYMBOL_YYYYMMDD_HHMMSS_mmm_ACTION
+    Includes milliseconds to prevent same-second collisions.
     """
-    timestamp = get_ist_now().strftime('%Y%m%d_%H%M%S')
-    return f"{symbol}_{timestamp}_{action}"
+    now = get_ist_now()
+    timestamp = now.strftime('%Y%m%d_%H%M%S')
+    milliseconds = int(now.microsecond / 1000)  # Convert to milliseconds
+    return f"{symbol}_{timestamp}_{milliseconds:03d}_{action}"
 
 def is_duplicate_order(correlation_id):
     """
@@ -138,12 +141,14 @@ def place_buy_order(smartApi, symbol, token, qty, correlation_id=None):
         orderId = place_order_api(smartApi, orderparams)
         logger.info(f"Order Placed for {symbol} | Order ID: {orderId} | cID: {correlation_id}")
         
-        # Clear from pending on success
-        clear_pending_order(correlation_id)
+        # Store order_id with correlation_id for later cleanup
+        if correlation_id in BOT_STATE.get('pending_orders', {}):
+            BOT_STATE['pending_orders'][correlation_id]['order_id'] = orderId
+        
         return orderId
     except Exception as e:
         logger.error(f"Order Placement Failed for {symbol}: {e} | cID: {correlation_id}")
-        # Clear from pending on failure too (allow retry with new correlation_id)
+        # Only clear on true failure (order not placed at all)
         clear_pending_order(correlation_id)
         return None
 
@@ -191,41 +196,63 @@ def place_sell_order(smartApi, symbol, token, qty, reason="EXIT", correlation_id
         orderId = place_order_api(smartApi, orderparams)
         logger.info(f"SELL Order Placed for {symbol} ({reason}) | Order ID: {orderId} | cID: {correlation_id}")
         
-        # Clear from pending on success
-        clear_pending_order(correlation_id)
+        # Store order_id with correlation_id for later cleanup
+        if correlation_id in BOT_STATE.get('pending_orders', {}):
+            BOT_STATE['pending_orders'][correlation_id]['order_id'] = orderId
+        
         return orderId
     except Exception as e:
         logger.error(f"SELL Order Failed for {symbol}: {e} | cID: {correlation_id}")
-        # Clear from pending on failure (allow retry with new correlation_id)
+        # Only clear on true failure (order not placed at all)
         clear_pending_order(correlation_id)
         return None
 
 def place_sell_order_with_retry(smartApi, symbol, token, qty, reason, max_retries=3):
     """
     Places exit order with retry logic.
-    Critical for SL/TP reliability - ensures exits are executed even during network issues.
+    CRITICAL: Places order ONCE, retries VERIFICATION to prevent duplicate sells.
     """
+    # STEP 1: Place exit order ONCE
+    logger.info(f"Placing exit order for {symbol} ({reason})")
+    order_id = place_sell_order(smartApi, symbol, token, qty, reason)
+    
+    if not order_id:
+        logger.critical(f"🚨 Exit order placement FAILED for {symbol} ({reason})")
+        return None
+    
+    # STEP 2: Retry VERIFICATION (not placement)
     for attempt in range(1, max_retries + 1):
-        logger.info(f"Exit attempt {attempt}/{max_retries} for {symbol} ({reason})")
+        logger.info(f"Verification attempt {attempt}/{max_retries} for {symbol} (Order: {order_id})")
         
-        order_id = place_sell_order(smartApi, symbol, token, qty, reason)
+        time.sleep(0.5)  # Wait for broker processing
+        is_success, status, _ = verify_order_status(smartApi, order_id)
         
-        if order_id:
-            # Verify quickly
-            time.sleep(0.5)
-            is_success, status, _ = verify_order_status(smartApi, order_id)
-            
-            if is_success:
-                logger.info(f"✅ Exit confirmed: {symbol} ({reason})")
-                return order_id
-            else:
-                logger.warning(f"❌ Exit verification failed (Attempt {attempt}): {status}")
+        if is_success:
+            logger.info(f"✅ Exit confirmed: {symbol} ({reason}) | Order: {order_id}")
+            return order_id
+        else:
+            logger.warning(f"⚠️ Verification attempt {attempt} status: {status}")
         
         if attempt < max_retries:
             time.sleep(0.5 * attempt)  # Exponential backoff: 0.5s, 1s
     
-    logger.critical(f"🚨 CRITICAL: All exit attempts FAILED for {symbol} ({reason})")
-    return None
+    # All verification attempts exhausted - check positions as last resort
+    logger.warning(f"🔍 Verification timeout for {symbol}. Checking broker positions...")
+    from dhan_api_helper import fetch_net_positions
+    live_positions = fetch_net_positions(smartApi)
+    
+    if live_positions:
+        # Check if position is closed (order likely filled)
+        symbol_found = any(
+            pos.get("tradingsymbol", "").replace("-EQ", "") == symbol and int(pos.get("netqty", 0)) == 0
+            for pos in live_positions
+        )
+        if symbol_found:
+            logger.info(f"✅ Position confirmed closed via broker check: {symbol}")
+            return order_id
+    
+    logger.critical(f"🚨 Exit verification FAILED for {symbol} ({reason}) | Order: {order_id}")
+    return order_id  # Return order_id anyway (order was placed, just couldn't verify)
 
 def get_account_balance(smartApi, dry_run):
     """
