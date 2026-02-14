@@ -603,7 +603,7 @@ def manage_positions(smartApi, token_map):
                 with state_lock:
                     pos = BOT_STATE["positions"].get(symbol)
                     if pos and pos["status"] == "OPEN":
-                        place_sell_order(smartApi, symbol, token, pos['qty'], reason="TIME_EXIT")
+                        place_sell_order_with_retry(smartApi, symbol, token, pos['qty'], reason="TIME_EXIT")
                         pos['status'] = "CLOSED"
                         pos['exit_price'] = exit_price  # Actual market price
                         pos['exit_reason'] = "TIME_EXIT"
@@ -648,7 +648,7 @@ def manage_positions(smartApi, token_map):
                 # 1. HARD STOP LOSS (Safety Net)
                 if current_ltp <= sl_price:
                     logger.info(f"{symbol} Hit STOP LOSS at {current_ltp} (SL: {sl_price})")
-                    place_sell_order(smartApi, symbol, token, pos['qty'], reason="STOP LOSS")
+                    place_sell_order_with_retry(smartApi, symbol, token, pos['qty'], reason="STOP_LOSS")
                     pos['status'] = "CLOSED"
                     pos['exit_price'] = current_ltp
                     pos['exit_reason'] = "STOP_LOSS"
@@ -664,7 +664,7 @@ def manage_positions(smartApi, token_map):
                 target_price = pos.get('target')
                 if target_price and current_ltp >= target_price:
                     logger.info(f"🎯 {symbol} Hit TARGET at {current_ltp} (Target: {target_price})")
-                    place_sell_order(smartApi, symbol, token, pos['qty'], reason="TARGET_HIT")
+                    place_sell_order_with_retry(smartApi, symbol, token, pos['qty'], reason="TARGET_HIT")
                     pos['status'] = "CLOSED"
                     pos['exit_price'] = current_ltp
                     pos['exit_reason'] = "TARGET_HIT"
@@ -707,7 +707,7 @@ def manage_positions(smartApi, token_map):
                             if close_price < ema_20 and close_price < vwap:
                                 exit_reason = f"Dual Breakdown (Close {close_price} < EMA {ema_20:.2f} & VWAP {vwap:.2f})"
                                 logger.info(f"📉 {symbol} Technical Exit: {exit_reason}.")
-                                place_sell_order(smartApi, symbol, token, pos['qty'], reason="TECH_EXIT")
+                                place_sell_order_with_retry(smartApi, symbol, token, pos['qty'], reason="TECH_EXIT")
                                 pos['status'] = "CLOSED"
                                 pos['exit_price'] = current_ltp 
                                 pos['exit_reason'] = "TECH_EXIT"
@@ -733,7 +733,7 @@ def manage_positions(smartApi, token_map):
                     
                     if duration_minutes > 60 and current_profit_pct < 0.005: # < 0.5% gain after 1 hour
                         logger.info(f"💤 Time Exit: {symbol} Stagnant for {int(duration_minutes)}m. Closing.")
-                        place_sell_order(smartApi, symbol, token, pos['qty'], reason="TIME_EXIT")
+                        place_sell_order_with_retry(smartApi, symbol, token, pos['qty'], reason="TIME_EXIT")
                         pos['status'] = "CLOSED"
                         pos['exit_price'] = current_ltp 
                         pos['exit_reason'] = "TIME_EXIT"
