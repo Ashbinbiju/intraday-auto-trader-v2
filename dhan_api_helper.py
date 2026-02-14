@@ -533,8 +533,14 @@ def get_order_status(dhan, order_id):
         resp = dhan.get_order_by_id(order_id)
         if resp['status'] == 'success':
             data = resp['data']
-            if isinstance(data, list) and data:
+            if isinstance(data, list):
+                if not data:
+                    # Empty list - no order data found
+                    return "UNKNOWN"
                 data = data[0]
+            
+            if not isinstance(data, dict):
+                return "UNKNOWN"
             
             return data.get('orderStatus', 'UNKNOWN').upper()
             
