@@ -10,7 +10,8 @@ with open("config.json", "r") as f:
     local_config = json.load(f)
 
 print("📤 Syncing config to Supabase...")
-print(f"Leverage setting: {local_config.get('position_sizing', {}).get('leverage_equity', 'NOT FOUND')}")
+leverage = local_config.get('position_sizing', {}).get('leverage_equity', 'NOT FOUND')
+print(f"Leverage setting: {leverage}")
 
 # Save to Supabase
 config_manager.save_config()
