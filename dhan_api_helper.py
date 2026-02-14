@@ -517,3 +517,29 @@ def verify_order_status(dhan, order_id, retries=5, delay=1):
             
     return False, "TIMEOUT_VERIFY", 0.0
 
+
+def get_order_status(dhan, order_id):
+    """
+    Fetches the status of an order by ID.
+    Returns: status string (e.g., 'TRADED', 'PENDING', 'REJECTED', 'CANCELLED')
+    """
+    if not order_id:
+        return "UNKNOWN"
+    
+    # Rate Limit (Order API: 10/s)
+    order_limiter.wait()
+    
+    try:
+        resp = dhan.get_order_by_id(order_id)
+        if resp['status'] == 'success':
+            data = resp['data']
+            if isinstance(data, list) and data:
+                data = data[0]
+            
+            return data.get('orderStatus', 'UNKNOWN').upper()
+            
+        return "UNKNOWN"
+    except Exception as e:
+        logger.error(f"Error fetching order status {order_id}: {e}")
+        return "UNKNOWN"
+
