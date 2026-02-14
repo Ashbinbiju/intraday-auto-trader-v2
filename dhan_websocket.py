@@ -16,8 +16,7 @@ def _patch_dhan_websocket():
     try:
         from dhanhq.orderupdate import OrderSocket
         
-        # Save original connect method
-        original_connect = OrderSocket.connect_order_update
+        # Note: Original method available at OrderSocket.connect_order_update if restoration needed
         
         async def patched_connect(self):
             """Patched version that handles multiple JSON objects"""
@@ -67,7 +66,7 @@ def _patch_dhan_websocket():
         logger.warning(f"⚠️  Could not patch Dhan SDK: {e}")
         return False
 
-def start_dhan_websocket(bot_state):
+def start_dhan_websocket(_bot_state):
     """
     Dhan Order Update WebSocket - DISABLED due to SDK bug.
     
