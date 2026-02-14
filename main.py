@@ -266,7 +266,7 @@ def place_sell_order_with_retry(smartApi, symbol, token, qty, reason, max_retrie
     
     if not order_id:
         logger.critical(f"🚨 Exit order placement FAILED for {symbol} ({reason})")
-        return None
+        return None, False
     
     # STEP 2: Retry VERIFICATION (not placement)
     for attempt in range(1, max_retries + 1):
@@ -277,7 +277,7 @@ def place_sell_order_with_retry(smartApi, symbol, token, qty, reason, max_retrie
         
         if is_success:
             logger.info(f"✅ Exit confirmed: {symbol} ({reason}) | Order: {order_id}")
-            return order_id
+            return order_id, True
         else:
             logger.warning(f"⚠️ Verification attempt {attempt} status: {status}")
         
@@ -297,10 +297,10 @@ def place_sell_order_with_retry(smartApi, symbol, token, qty, reason, max_retrie
         )
         if symbol_found:
             logger.info(f"✅ Position confirmed closed via broker check: {symbol}")
-            return order_id
+            return order_id, True
     
     logger.critical(f"🚨 Exit verification FAILED for {symbol} ({reason}) | Order: {order_id}")
-    return order_id  # Return order_id anyway (order was placed, just couldn't verify)
+    return order_id, False  # Return order_id anyway (order was placed, just couldn't verify)
 
 def get_account_balance(smartApi, dry_run):
     """
@@ -684,20 +684,28 @@ def manage_positions(smartApi, token_map):
                         exit_qty = pos['qty']
                 
                 if exit_qty > 0:
-                    order_id = place_sell_order_with_retry(smartApi, symbol, token, exit_qty, reason="TIME_EXIT")
+                    order_id, verified = place_sell_order_with_retry(smartApi, symbol, token, exit_qty, reason="TIME_EXIT")
                     
                     with state_lock:
                         pos = BOT_STATE["positions"].get(symbol)
-                        if pos: pos["exit_in_progress"] = False # Reset flag
                         
-                        if pos and order_id:
+                        if pos and order_id and verified:
+                            pos["exit_in_progress"] = False 
                             pos['status'] = "CLOSED"
-                            pos['exit_price'] = exit_price  # Actual market price
+                            pos['exit_price'] = exit_price 
                             pos['exit_reason'] = "TIME_EXIT"
                             save_state(BOT_STATE)
+                        elif pos and order_id and not verified:
+                             # Exits unverified: Don't close, but keep exit_in_progress=True to prevent duplicates
+                             # Let Reconciliation or WebSocket clean it up.
+                             logger.warning(f"⚠️ TIME_EXIT unverified for {symbol}. Waiting for confirmation.")
+                             pass
+                        elif pos:
+                             # Placement failed
+                             pos["exit_in_progress"] = False
                     
-                    if order_id:
-                         # LOG TO SUPABASE (Outside lock to prevent blocking)
+                    if order_id: # Log attempted exit even if unverified
+                         # LOG TO SUPABASE 
                          leverage = get_leverage()
                          log_trade_execution(BOT_STATE["positions"].get(symbol), exit_price, "TIME_EXIT", leverage)
                 continue
@@ -806,17 +814,23 @@ def manage_positions(smartApi, token_map):
             # EXECUTION PHASE (Outside Lock)
             if exit_action:
                 reason_code, qty, reason_log = exit_action
-                order_id = place_sell_order_with_retry(smartApi, symbol, token, qty, reason=reason_code)
+                order_id, verified = place_sell_order_with_retry(smartApi, symbol, token, qty, reason=reason_code)
                 
                 with state_lock:
                     pos = BOT_STATE["positions"].get(symbol)
-                    if pos: pos["exit_in_progress"] = False # Reset flag
                     
-                    if pos and order_id:
+                    if pos and order_id and verified:
+                        pos["exit_in_progress"] = False # Reset only on success? No, reset on verified.
                         pos['status'] = "CLOSED"
                         pos['exit_price'] = current_ltp 
                         pos['exit_reason'] = reason_code
                         save_state(BOT_STATE)
+                    elif pos and order_id and not verified:
+                         logger.warning(f"⚠️ Exit {reason_code} unverified for {symbol}. Keep flag TRUE. Wait for sync.")
+                         pass 
+                    elif pos:
+                         # Placement FAILED completely.
+                         pos["exit_in_progress"] = False
                 
                 if order_id:
                     # LOG TO SUPABASE (Outside lock)
