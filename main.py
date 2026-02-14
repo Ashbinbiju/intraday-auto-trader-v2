@@ -78,7 +78,42 @@ BOT_STATE = load_state()
 start_auto_save(BOT_STATE, interval=60)
 # -----------------------------------
 
-def place_buy_order(smartApi, symbol, token, qty):
+# === ORDER IDEMPOTENCY HELPERS ===
+def generate_correlation_id(symbol, action):
+    """
+    Generates unique correlation ID for order tracking.
+    Format: SYMBOL_YYYYMMDD_HHMMSS_ACTION
+    """
+    timestamp = get_ist_now().strftime('%Y%m%d_%H%M%S')
+    return f"{symbol}_{timestamp}_{action}"
+
+def is_duplicate_order(correlation_id):
+    """
+    Checks if order with this correlation_id is already pending.
+    """
+    return correlation_id in BOT_STATE.get('pending_orders', {})
+
+def register_pending_order(correlation_id, order_data):
+    """
+    Registers order as pending to prevent duplicates.
+    """
+    if 'pending_orders' not in BOT_STATE:
+        BOT_STATE['pending_orders'] = {}
+    BOT_STATE['pending_orders'][correlation_id] = {
+        'timestamp': time.time(),
+        'symbol': order_data.get('symbol'),
+        'action': order_data.get('action')
+    }
+
+def clear_pending_order(correlation_id):
+    """
+    Removes order from pending list after completion.
+    """
+    if 'pending_orders' in BOT_STATE:
+        BOT_STATE['pending_orders'].pop(correlation_id, None)
+# ==================================
+
+def place_buy_order(smartApi, symbol, token, qty, correlation_id=None):
     """
     Places a Buy Order.
     """
@@ -101,10 +136,15 @@ def place_buy_order(smartApi, symbol, token, qty):
         # Use helper place_order_api
         from dhan_api_helper import place_order_api
         orderId = place_order_api(smartApi, orderparams)
-        logger.info(f"Order Placed for {symbol} | Order ID: {orderId}")
+        logger.info(f"Order Placed for {symbol} | Order ID: {orderId} | cID: {correlation_id}")
+        
+        # Clear from pending on success
+        clear_pending_order(correlation_id)
         return orderId
     except Exception as e:
-        logger.error(f"Order Placement Failed for {symbol}: {e}")
+        logger.error(f"Order Placement Failed for {symbol}: {e} | cID: {correlation_id}")
+        # Clear from pending on failure too (allow retry with new correlation_id)
+        clear_pending_order(correlation_id)
         return None
 
 # Shared State for API
@@ -113,13 +153,26 @@ TOKEN_MAP = {}
 
 
 
-def place_sell_order(smartApi, symbol, token, qty, reason="EXIT"):
+def place_sell_order(smartApi, symbol, token, qty, reason="EXIT", correlation_id=None):
     """
-    Places a Sell Order to exit a position.
+    Places a Sell Order to exit a position with idempotency support.
     """
+    # Generate correlation_id if not provided
+    if not correlation_id:
+        correlation_id = generate_correlation_id(symbol, reason)
+    
+    # Check for duplicate (prevent double exits)
+    if is_duplicate_order(correlation_id):
+        logger.warning(f"⚠️ Duplicate SELL order prevented: {correlation_id}")
+        return None
+    
+    # Register as pending
+    register_pending_order(correlation_id, {'symbol': symbol, 'action': reason})
+    
     dry_run = config_manager.get("general", "dry_run")
     if dry_run:
-        logger.info(f"[DRY RUN] Simulated SELL for {symbol} | Reason: {reason} | Qty: {qty}")
+        logger.info(f"[DRY RUN] Simulated SELL for {symbol} | Reason: {reason} | Qty: {qty} | cID: {correlation_id}")
+        clear_pending_order(correlation_id)
         return True
 
     try:
@@ -136,11 +189,43 @@ def place_sell_order(smartApi, symbol, token, qty, reason="EXIT"):
         # Use helper place_order_api
         from dhan_api_helper import place_order_api
         orderId = place_order_api(smartApi, orderparams)
-        logger.info(f"SELL Order Placed for {symbol} ({reason}) | Order ID: {orderId}")
+        logger.info(f"SELL Order Placed for {symbol} ({reason}) | Order ID: {orderId} | cID: {correlation_id}")
+        
+        # Clear from pending on success
+        clear_pending_order(correlation_id)
         return orderId
     except Exception as e:
-        logger.error(f"SELL Order Failed for {symbol}: {e}")
+        logger.error(f"SELL Order Failed for {symbol}: {e} | cID: {correlation_id}")
+        # Clear from pending on failure (allow retry with new correlation_id)
+        clear_pending_order(correlation_id)
         return None
+
+def place_sell_order_with_retry(smartApi, symbol, token, qty, reason, max_retries=3):
+    """
+    Places exit order with retry logic.
+    Critical for SL/TP reliability - ensures exits are executed even during network issues.
+    """
+    for attempt in range(1, max_retries + 1):
+        logger.info(f"Exit attempt {attempt}/{max_retries} for {symbol} ({reason})")
+        
+        order_id = place_sell_order(smartApi, symbol, token, qty, reason)
+        
+        if order_id:
+            # Verify quickly
+            time.sleep(0.5)
+            is_success, status, _ = verify_order_status(smartApi, order_id)
+            
+            if is_success:
+                logger.info(f"✅ Exit confirmed: {symbol} ({reason})")
+                return order_id
+            else:
+                logger.warning(f"❌ Exit verification failed (Attempt {attempt}): {status}")
+        
+        if attempt < max_retries:
+            time.sleep(0.5 * attempt)  # Exponential backoff: 0.5s, 1s
+    
+    logger.critical(f"🚨 CRITICAL: All exit attempts FAILED for {symbol} ({reason})")
+    return None
 
 def get_account_balance(smartApi, dry_run):
     """
@@ -735,6 +820,65 @@ def reconcile_state(smartApi):
     
     return True # Success
 
+def reconcile_positions_quick(smartApi):
+    """
+    Lightweight reconciliation - open positions only.
+    Runs every 60s to catch orphans/ghosts mid-day.
+    """
+    try:
+        live_positions = fetch_net_positions(smartApi)
+        if not live_positions:
+            return
+        
+        # Build map of broker's open positions
+        broker_open = {}
+        for pos in live_positions:
+            qty = int(pos.get("netqty", 0))
+            if qty != 0:
+                symbol = pos.get("tradingsymbol", "").replace("-EQ", "")
+                broker_open[symbol] = {
+                    "qty": abs(qty),
+                    "avg_price": float(pos.get("avgnetprice", 0)),
+                    "token": pos.get("symboltoken")
+                }
+        
+        with state_lock:
+            # Check for ghosts (in bot, not in broker)
+            for symbol, pos in list(BOT_STATE["positions"].items()):
+                if pos["status"] == "OPEN" and symbol not in broker_open:
+                    logger.warning(f"👻 Ghost detected: {symbol}. Marking closed.")
+                    pos["status"] = "CLOSED"
+                    pos["exit_reason"] = "RECONCILIATION"
+                    
+            # Check for orphans (in broker, not in bot)
+            for symbol, data in broker_open.items():
+                if symbol not in BOT_STATE["positions"] or BOT_STATE["positions"][symbol]["status"] != "OPEN":
+                    logger.warning(f"⚠️ Orphan detected: {symbol} (Qty: {data['qty']}). Importing...")
+                    
+                    # Import with safe defaults
+                    sl_pct = config_manager.get("risk", "stop_loss_pct") or 0.01
+                    tp_pct = config_manager.get("risk", "target_pct") or 0.02
+                    
+                    BOT_STATE["positions"][symbol] = {
+                        "symbol": symbol,
+                        "entry_price": data['avg_price'],
+                        "qty": data['qty'],
+                        "sl": data['avg_price'] * (1 - sl_pct),
+                        "target": data['avg_price'] * (1 + tp_pct),
+                        "original_sl": data['avg_price'] * (1 - sl_pct),
+                        "highest_ltp": data['avg_price'],
+                        "status": "OPEN",
+                        "entry_time": "RECONCILED",
+                        "entry_time_ts": time.time(),
+                        "is_breakeven_active": False,
+                        "is_orphaned": True
+                    }
+                    
+        save_state(BOT_STATE)
+        
+    except Exception as e:
+        logger.error(f"Quick reconciliation error: {e}")
+
 import asyncio
 
 # ... imports ...
@@ -783,7 +927,16 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                 # Broadcast updates immediately after management
                 broadcast_state()
                 
-                time.sleep(5) 
+                # Adaptive polling: 1s if recent entry, else 5s
+                # Reduces SL slippage for fresh positions
+                has_fresh_position = any(
+                    (time.time() - pos.get('entry_time_ts', 0)) < 30
+                    for pos in BOT_STATE['positions'].values()
+                    if pos['status'] == 'OPEN'
+                )
+                
+                interval = 1 if has_fresh_position else 5
+                time.sleep(interval)
             except Exception as e:
                 logger.error(f"Position Manager Thread Error: {e}")
                 time.sleep(5)
@@ -812,6 +965,21 @@ def run_bot_loop(async_loop=None, ws_manager=None):
     # 3. Start Position Manager Thread
     pm_thread = threading.Thread(target=run_position_manager, args=(dhan, token_map), daemon=True)
     pm_thread.start()
+
+    # 3.5. Start Continuous Reconciliation Thread
+    def run_reconciliation_loop():
+        time.sleep(10)  # Initial delay to let bot initialize
+        while BOT_STATE.get("is_running", True):
+            try:
+                reconcile_positions_quick(smartApi)
+                time.sleep(60)  # Every 60 seconds
+            except Exception as e:
+                logger.error(f"Reconciliation Loop Error: {e}")
+                time.sleep(60)
+    
+    recon_thread = threading.Thread(target=run_reconciliation_loop, daemon=True, name="Reconciliation")
+    recon_thread.start()
+    logger.info("✅ Continuous Reconciliation started (60s interval)")
 
     # 4. Start Dhan Order WebSocket (Real-time Updates)
     try:
