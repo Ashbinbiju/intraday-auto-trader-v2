@@ -56,8 +56,8 @@ def _patch_dhan_websocket():
                                 if idx < len(message_str):
                                     logger.debug(f"Unparsed data remaining at idx {idx}: {message_str[idx:idx+50]!r}...")
                                 break
-                    except (TypeError, AttributeError) as e:
-                        logger.error(f"JSON parse error: {e}")
+                    except (TypeError, AttributeError):
+                        logger.exception("JSON parse error")
         
         # Apply monkey-patch
         OrderSocket.connect_order_update = patched_connect
@@ -69,57 +69,22 @@ def _patch_dhan_websocket():
 
 def start_dhan_websocket(bot_state):
     """
-    Start Dhan Order Update WebSocket.
-    Uses official DhanHQ implementation pattern from docs.
-    Updates BOT_STATE with real-time order status.
-    """
-    client_id = config_manager.get("credentials", "dhan_client_id")
-    access_token = config_manager.get("credentials", "dhan_access_token")
+    Dhan Order Update WebSocket - DISABLED due to SDK bug.
     
-    if not client_id or not access_token:
-        logger.error("❌ Credentials Missing. Skipping WebSocket.")
-        return
-
-    dhan_context = DhanContext(client_id, access_token)
-
-    def on_order_update(order_data: dict):
-        """Callback function to process order update data"""
-        try:
-            data = order_data.get('Data', {})
-            status = data.get('orderStatus')
-            order_id = data.get('orderId')
-            symbol = data.get('tradingSymbol')
-            
-            with state_lock:
-                # 1. Update Order History
-                if 'orders' not in bot_state:
-                    bot_state['orders'] = {}
-                
-                # Check if we are tracking this order
-                if order_id in bot_state['orders']:
-                    bot_state['orders'][order_id].update(data)
-                    logger.info(f"⚡ WS Update: Order {order_id} -> {status}")
-                
-                # 2. Handle TRADED (Fill)
-                if status == "TRADED":
-                   logger.info(f"✅ Trade Executed: {symbol} | Qty: {data.get('filledQty')} @ {data.get('tradedPrice')}")
-            
-        except Exception as e:
-            logger.error(f"Error processing order update: {e}")
-
-    def run_order_update():
-        """Main order WebSocket loop with auto-reconnect"""
-        order_client = OrderUpdate(dhan_context)
-        order_client.on_update = on_order_update
-
-        while True:
-            try:
-                logger.info("🔄 Connecting to Dhan Order WebSocket...")
-                order_client.connect_to_dhan_websocket_sync()
-            except Exception as e:
-                logger.error(f"WebSocket Disconnected: {e}. Retrying in 5s...")
-                time.sleep(5)
-
-    t = threading.Thread(target=run_order_update, daemon=True, name="DhanOrderSocket")
-    t.start()
-    return t
+    Issue: dhanhq==2.2.0rc1 has a JSON parsing bug where it cannot handle
+    concatenated JSON objects sent by Dhan's WebSocket server.
+    Error: "Extra data: line 2 column 1 (char 2)"
+    
+    This is a bug in the installed package itself, not our implementation.
+    Order status is still tracked via REST API polling in main loop.
+    
+    If Dhan fixes this in a future SDK release, re-enable by uncommenting below.
+    """
+    logger.info("ℹ️  Dhan Order WebSocket disabled (SDK has JSON parsing bug)")
+    logger.info("📡 Order status tracked via REST API polling instead")
+    return None
+    
+    # Original implementation (correct pattern, but SDK has bug):
+    # order_client = OrderUpdate(dhan_context)
+    # order_client.on_update = on_order_update
+    # order_client.connect_to_dhan_websocket_sync()
