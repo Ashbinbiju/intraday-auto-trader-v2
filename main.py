@@ -93,27 +93,73 @@ def generate_correlation_id(symbol, action):
 def is_duplicate_order(correlation_id):
     """
     Checks if order with this correlation_id is already pending.
+    Thread-safe check.
     """
-    return correlation_id in BOT_STATE.get('pending_orders', {})
+    with state_lock:
+        return correlation_id in BOT_STATE.get('pending_orders', {})
 
 def register_pending_order(correlation_id, order_data):
     """
     Registers order as pending to prevent duplicates.
+    Thread-safe registration.
     """
-    if 'pending_orders' not in BOT_STATE:
-        BOT_STATE['pending_orders'] = {}
-    BOT_STATE['pending_orders'][correlation_id] = {
-        'timestamp': time.time(),
-        'symbol': order_data.get('symbol'),
-        'action': order_data.get('action')
-    }
+    with state_lock:
+        if 'pending_orders' not in BOT_STATE:
+            BOT_STATE['pending_orders'] = {}
+        BOT_STATE['pending_orders'][correlation_id] = {
+            'timestamp': time.time(),
+            'symbol': order_data.get('symbol'),
+            'action': order_data.get('action')
+        }
 
 def clear_pending_order(correlation_id):
     """
     Removes order from pending list after completion.
+    Thread-safe removal.
     """
-    if 'pending_orders' in BOT_STATE:
-        BOT_STATE['pending_orders'].pop(correlation_id, None)
+    with state_lock:
+        if 'pending_orders' in BOT_STATE:
+            BOT_STATE['pending_orders'].pop(correlation_id, None)
+
+def cleanup_pending_orders(smartApi):
+    """
+    Periodic cleanup: removes orders in final states from pending list.
+    Prevents memory bloat from stale pending orders.
+    Final states: FILLED, REJECTED, CANCELLED, EXPIRED
+    Thread-safe cleanup.
+    """
+    try:
+        # Get snapshot of pending orders with lock
+        with state_lock:
+            pending = dict(BOT_STATE.get('pending_orders', {}))
+        
+        if not pending:
+            return
+        
+        from dhan_api_helper import get_order_status
+        
+        for correlation_id, data in pending.items():
+            order_id = data.get('order_id')
+            if not order_id:
+                # No order_id means placement failed, safe to remove
+                clear_pending_order(correlation_id)
+                continue
+            
+            try:
+                # Check if order is in final state
+                status = get_order_status(smartApi, order_id)
+                if status in ["FILLED", "TRADED", "REJECTED", "CANCELLED", "EXPIRED"]:
+                    logger.info(f"Cleanup: Removing finalized order {correlation_id} (Status: {status})")
+                    clear_pending_order(correlation_id)
+            except Exception as e:
+                # If we can't check status after 10 minutes, assume it's stale
+                age_seconds = time.time() - data.get('timestamp', time.time())
+                if age_seconds > 600:  # 10 minutes
+                    logger.warning(f"Cleanup: Removing stale pending order {correlation_id} (Age: {int(age_seconds)}s)")
+                    clear_pending_order(correlation_id)
+                    
+    except Exception as e:
+        logger.error(f"Pending order cleanup error: {e}")
 # ==================================
 
 def place_buy_order(smartApi, symbol, token, qty, correlation_id=None):
@@ -141,9 +187,10 @@ def place_buy_order(smartApi, symbol, token, qty, correlation_id=None):
         orderId = place_order_api(smartApi, orderparams)
         logger.info(f"Order Placed for {symbol} | Order ID: {orderId} | cID: {correlation_id}")
         
-        # Store order_id with correlation_id for later cleanup
-        if correlation_id in BOT_STATE.get('pending_orders', {}):
-            BOT_STATE['pending_orders'][correlation_id]['order_id'] = orderId
+        # Store order_id with correlation_id for later cleanup (thread-safe)
+        with state_lock:
+            if correlation_id in BOT_STATE.get('pending_orders', {}):
+                BOT_STATE['pending_orders'][correlation_id]['order_id'] = orderId
         
         return orderId
     except Exception as e:
@@ -196,9 +243,10 @@ def place_sell_order(smartApi, symbol, token, qty, reason="EXIT", correlation_id
         orderId = place_order_api(smartApi, orderparams)
         logger.info(f"SELL Order Placed for {symbol} ({reason}) | Order ID: {orderId} | cID: {correlation_id}")
         
-        # Store order_id with correlation_id for later cleanup
-        if correlation_id in BOT_STATE.get('pending_orders', {}):
-            BOT_STATE['pending_orders'][correlation_id]['order_id'] = orderId
+        # Store order_id with correlation_id for later cleanup (thread-safe)
+        with state_lock:
+            if correlation_id in BOT_STATE.get('pending_orders', {}):
+                BOT_STATE['pending_orders'][correlation_id]['order_id'] = orderId
         
         return orderId
     except Exception as e:
@@ -1007,6 +1055,21 @@ def run_bot_loop(async_loop=None, ws_manager=None):
     recon_thread = threading.Thread(target=run_reconciliation_loop, daemon=True, name="Reconciliation")
     recon_thread.start()
     logger.info("✅ Continuous Reconciliation started (60s interval)")
+
+    # 3.6. Start Pending Order Cleanup Thread
+    def run_cleanup_loop():
+        time.sleep(60)  # Initial delay
+        while BOT_STATE.get("is_running", True):
+            try:
+                cleanup_pending_orders(smartApi)
+                time.sleep(300)  # Every 5 minutes
+            except Exception as e:
+                logger.error(f"Cleanup Loop Error: {e}")
+                time.sleep(300)
+    
+    cleanup_thread = threading.Thread(target=run_cleanup_loop, daemon=True, name="Cleanup")
+    cleanup_thread.start()
+    logger.info("✅ Pending Order Cleanup started (5min interval)")
 
     # 4. Start Dhan Order WebSocket (Real-time Updates)
     try:
