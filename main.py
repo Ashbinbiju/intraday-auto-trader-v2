@@ -1478,8 +1478,10 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                             
                                             # Identify Resistances ABOVE Current Price
                                             resistances = []
-                                            if pdh_val and pdh_val > price: resistances.append(pdh_val)
-                                            if cdh_val and cdh_val > price: resistances.append(cdh_val)
+                                            if pdh_val and pdh_val > price:
+                                                resistances.append(pdh_val)
+                                            if cdh_val and cdh_val > price:
+                                                resistances.append(cdh_val)
                                             
                                             if resistances:
                                                 nearest_res = min(resistances)
