@@ -123,7 +123,7 @@ def check_buy_condition(df, current_price=None, extension_limit=1.5):
                  vol_ratio = current_vol / avg_vol
                  
                  if vol_ratio > 1.2:
-                      reasons.append(f"Wick Rejection ({wick_pct:.0%} > 35%) with Vol Spike ({vol_ratio:.1f}x)")
+                      reasons.append(f"Wick Rejection: Wick {wick_pct:.0%} + Volume {vol_ratio:.1f}x (Seller Pressure)")
 
     # 3. Volume Confirmation (Adaptive Mechanism)
     # If in Trend Mode (ExtLimit >= 2.0), relax Vol to 1.2x.
