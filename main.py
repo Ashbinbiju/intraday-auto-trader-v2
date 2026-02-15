@@ -1693,7 +1693,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                                     "order_id": orderId
                                                 }
                                                 BOT_STATE["total_trades_today"] += 1
-                                                BOT_STATE["stock_trade_counts"][symbol] = current_stock_trades + 1 # Note: Might be stale? No, loop updates local var, but BOT_STATE is single source
+                                                
                                                 # Update specific stock count
                                                 BOT_STATE["stock_trade_counts"][symbol] = BOT_STATE["stock_trade_counts"].get(symbol, 0) + 1
                                                 
