@@ -264,11 +264,35 @@ def calculate_sr_levels(df):
         prev_day = daily_ohlc.iloc[-2]
         curr_day = daily_ohlc.iloc[-1]
         
+        # Date Validation: Ensure 'curr_day' is actually TODAY
+        import datetime
+        # Use IST (UTC+5:30) for date check
+        utc_now = datetime.datetime.now(datetime.timezone.utc)
+        ist_now_date = (utc_now + datetime.timedelta(hours=5, minutes=30)).date()
+        
+        curr_day_date = curr_day.name # Groupby key is index
+        
+        pdh = prev_day['high']
+        pdl = prev_day['low']
+        cdh = 0
+        cdl = 0
+        
+        if curr_day_date == ist_now_date:
+            cdh = curr_day['high']
+            cdl = curr_day['low']
+        else:
+            # Data ends at yesterday (Pre-market or early morning)
+            # So "curr_day" in the DF is actually Yesterday, and "prev_day" is Day Before Yesterday.
+            # We must shift logic.
+            pdh = curr_day['high'] # Yesterday becomes PDH
+            pdl = curr_day['low']  # Yesterday becomes PDL
+            # CDH/CDL remains 0 (No data for today yet)
+            
         return {
-            "PDH": prev_day['high'],
-            "PDL": prev_day['low'],
-            "CDH": curr_day['high'],
-            "CDL": curr_day['low']
+            "PDH": pdh,
+            "PDL": pdl,
+            "CDH": cdh,
+            "CDL": cdl
         }
     except Exception as e:
         # Logging not available here
