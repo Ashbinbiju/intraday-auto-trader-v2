@@ -173,6 +173,11 @@ def check_15m_bias(df):
     ema_20 = latest.get('EMA_20')
     if pd.isna(vwap) or pd.isna(ema_20):
         return 'NEUTRAL', "Missing VWAP/EMA20 on 15M"
+    
+    # Explicit check for 0.0 which could be valid in some data feeds but invalid for indicators
+    if vwap == 0 or ema_20 == 0:
+        return 'NEUTRAL', "Zero value for VWAP/EMA20 on 15M"
+        
     if price > vwap and price > ema_20:
         return 'BULLISH', f"15M: Price > VWAP ({vwap:.2f}) + EMA20"
     if price < vwap and price < ema_20:
@@ -214,7 +219,7 @@ def check_chop_filter(df):
     current_ema = df.iloc[-2].get('EMA_20')
     past_ema = df.iloc[-7].get('EMA_20') 
     
-    if current_ema and past_ema:
+    if pd.notna(current_ema) and pd.notna(past_ema) and past_ema != 0:
         # FIX: Remove abs() - Long-only strategy needs POSITIVE slope
         slope_pct = ((current_ema - past_ema) / past_ema) * 100
         
