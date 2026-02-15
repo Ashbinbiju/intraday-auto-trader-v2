@@ -3,7 +3,7 @@ import time
 import sys
 import asyncio
 import pandas as pd
-import threading # Added for log_trade_to_db
+import threading
 from scraper import fetch_top_performing_sectors, fetch_stocks_in_sector, fetch_market_indices
 from dhan_api_helper import get_dhan_session, load_dhan_instrument_map, fetch_candle_data, fetch_ltp, fetch_net_positions, place_order_api, fetch_holdings, verify_order_status, fetch_market_feed_bulk
 from indicators import calculate_indicators, check_buy_condition
