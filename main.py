@@ -918,8 +918,11 @@ def reconcile_positions_quick(smartApi):
     """
     try:
         live_positions = fetch_net_positions(smartApi)
-        if not live_positions:
+        if live_positions is None:
+            logger.warning("Quick reconciliation: Failed to fetch positions")
             return
+        
+        # Empty list is valid - means broker has no open positions
         
         # Build map of broker's open positions
         broker_open = {}
@@ -969,10 +972,10 @@ def reconcile_positions_quick(smartApi):
                         "exit_in_progress": False  # Initialize exit tracking
                     }
                     
-        save_state(BOT_STATE)
+                save_state(BOT_STATE)
         
     except Exception as e:
-        logger.error(f"Quick reconciliation error: {e}")
+        logger.exception(f"Quick reconciliation error: {e}")
 
 import asyncio
 
@@ -1028,11 +1031,12 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                 
                 # Adaptive polling: 1s if recent entry, else 5s
                 # Reduces SL slippage for fresh positions
-                has_fresh_position = any(
-                    (time.time() - pos.get('entry_time_ts', 0)) < 30
-                    for pos in BOT_STATE['positions'].values()
-                    if pos['status'] == 'OPEN'
-                )
+                with state_lock:
+                    has_fresh_position = any(
+                        (time.time() - pos.get('entry_time_ts', 0)) < 30
+                        for pos in BOT_STATE['positions'].values()
+                        if pos['status'] == 'OPEN'
+                    )
                 
                 interval = 1 if has_fresh_position else 5
                 time.sleep(interval)
