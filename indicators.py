@@ -112,18 +112,21 @@ def check_buy_condition(df, current_price=None, extension_limit=1.5):
          if total_range > 0:
              wick_pct = upper_wick / total_range
              
+             candle_range_pct = (total_range / last_row['open']) * 100
+             
+             # Pre-calculate Vol Ratio for Context
+             current_vol = last_row.get('volume', 0)
+             avg_vol = vol_sma if vol_sma > 0 else 1
+             vol_ratio = current_vol / avg_vol
+             
              # Hard Rejection: Wick > 50% involved (Ugly Candle)
              if wick_pct > 0.50:
-                 reasons.append(f"Huge Wick Rejection ({wick_pct:.0%} > 50%)")
+                 reasons.append(f"Huge Wick Rejection ({wick_pct:.0%} > 50%) | Candle Size: {candle_range_pct:.2f}% | Vol: {vol_ratio:.1f}x")
              
              # Context Rejection: Wick > 35% AND High Volume (> 1.2x Avg) -> Selling Pressure
              elif wick_pct > 0.35:
-                 current_vol = last_row.get('volume', 0)
-                 avg_vol = vol_sma if vol_sma > 0 else 1
-                 vol_ratio = current_vol / avg_vol
-                 
                  if vol_ratio > 1.2:
-                      reasons.append(f"Wick Rejection: Wick {wick_pct:.0%} + Volume {vol_ratio:.1f}x (Seller Pressure)")
+                      reasons.append(f"Wick Rejection: Wick {wick_pct:.0%} | Vol {vol_ratio:.1f}x | Candle Size {candle_range_pct:.2f}% (Seller Pressure)")
 
     # 3. Volume Confirmation (Adaptive Mechanism)
     # If in Trend Mode (ExtLimit >= 2.0), relax Vol to 1.2x.
@@ -138,7 +141,10 @@ def check_buy_condition(df, current_price=None, extension_limit=1.5):
     # Safety Mode: Max 1.0% | Trend Mode: Max 1.5%
     max_candle_range = 1.5 if extension_limit >= 1.9 else 1.0
     
-    candle_range_pct = ((last_row['high'] - last_row['low']) / last_row['open']) * 100
+    # Use pre-calculated candle_range_pct if available, else calc
+    if 'candle_range_pct' not in locals():
+        candle_range_pct = ((last_row['high'] - last_row['low']) / last_row['open']) * 100
+        
     if candle_range_pct > max_candle_range:
         reasons.append(f"Huge Candle ({candle_range_pct:.2f}% > Limit {max_candle_range}%)")
 
