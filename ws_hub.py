@@ -8,7 +8,7 @@ logger = logging.getLogger("WebSocket")
 class ConnectionManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
-        self.MAX_CONNECTIONS = 1 # Strict single-client limit
+        self.MAX_CONNECTIONS = 5 # Allow multiple tabs/clients (was 1)
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
