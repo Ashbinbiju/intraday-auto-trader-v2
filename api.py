@@ -211,9 +211,20 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
-            # Keep connection alive (client will receive broadcasts)
-            await asyncio.sleep(1)
+            # Send Heartbeat Ping every 15s to keep connection alive
+            # Fixing 'connection close' issue on cloud providers (AWS/Render)
+            await asyncio.sleep(15)
+            try:
+                await websocket.send_json({"type": "ping", "timestamp": str(datetime.now())})
+            except Exception as e:
+                # If send fails, client is gone. Break loop to trigger disconnect.
+                logger.debug(f"WS Ping Failed: {e}")
+                break
+                
     except WebSocketDisconnect:
+        manager.disconnect(websocket)
+    except Exception as e:
+        logger.error(f"WS Endpoint Error: {e}")
         manager.disconnect(websocket)
 
 # --- Journal / History ---
