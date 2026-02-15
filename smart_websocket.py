@@ -26,6 +26,10 @@ class OrderUpdateWS:
             # Let's handle both cases safely
             data = order_data.get("Data", order_data)
             self.handle_order_update(data)
+            
+            # Optional: Update Heartbeat for monitoring (even if not critical)
+            if self.bot_state:
+                self.bot_state.setdefault("heartbeat", {})["websocket"] = time.time()
         except Exception as e:
             logger.error(f"❌ Error processing order update: {e}")
 

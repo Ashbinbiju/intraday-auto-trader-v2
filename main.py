@@ -1156,7 +1156,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                 heartbeats = BOT_STATE.get("heartbeat", {})
                 
                 # Check critical threads
-                critical_threads = ["position_manager", "reconciliation", "websocket"]
+                critical_threads = ["position_manager", "reconciliation"] # Removed 'websocket' as it blocks internally w/o reliable heartbeat
                 
                 for thread_name in critical_threads:
                     last_beat = heartbeats.get(thread_name, 0)
