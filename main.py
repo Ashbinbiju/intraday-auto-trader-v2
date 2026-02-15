@@ -1020,7 +1020,8 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                 BOT_STATE.setdefault("heartbeat", {})["position_manager"] = time.time()
                 
                 # Run every 5 seconds for fast updates
-                manage_positions(api_session, t_map)
+                # Use global session to pick up re-authenticated sessions
+                manage_positions(DHAN_API_SESSION, t_map)
                 
                 # Broadcast updates immediately after management
                 broadcast_state()
@@ -1036,7 +1037,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                 interval = 1 if has_fresh_position else 5
                 time.sleep(interval)
             except Exception as e:
-                logger.error(f"Position Manager Thread Error: {e}")
+                logger.exception(f"Position Manager Thread Error: {e}")
                 time.sleep(5)
     # -------------------------------
 
@@ -1048,8 +1049,8 @@ def run_bot_loop(async_loop=None, ws_manager=None):
         BOT_STATE["is_running"] = False
         return
     
-    SMART_API_SESSION = dhan # Keeping variable name for compatibility with rest of code logic (for now)
-    smartApi = dhan 
+    DHAN_API_SESSION = dhan 
+    smartApi = dhan  # Legacy alias - to be refactored eventually 
 
     # 2. Load Dhan Instrument Map
     token_map = load_dhan_instrument_map()
@@ -1070,10 +1071,11 @@ def run_bot_loop(async_loop=None, ws_manager=None):
         while BOT_STATE.get("is_running", True):
             try:
                 BOT_STATE.setdefault("heartbeat", {})["reconciliation"] = time.time()
-                reconcile_positions_quick(smartApi)
+                # Use global session to pick up re-authenticated sessions
+                reconcile_positions_quick(DHAN_API_SESSION)
                 time.sleep(60)  # Every 60 seconds
             except Exception as e:
-                logger.error(f"Reconciliation Loop Error: {e}")
+                logger.exception(f"Reconciliation Loop Error: {e}")
                 time.sleep(60)
     
     recon_thread = threading.Thread(target=run_reconciliation_loop, daemon=True, name="Reconciliation")
@@ -1086,10 +1088,11 @@ def run_bot_loop(async_loop=None, ws_manager=None):
         while BOT_STATE.get("is_running", True):
             try:
                 BOT_STATE.setdefault("heartbeat", {})["cleanup"] = time.time()
-                cleanup_pending_orders(smartApi)
+                # Use global session to pick up re-authenticated sessions
+                cleanup_pending_orders(DHAN_API_SESSION)
                 time.sleep(300)  # Every 5 minutes
             except Exception as e:
-                logger.error(f"Cleanup Loop Error: {e}")
+                logger.exception(f"Cleanup Loop Error: {e}")
                 time.sleep(300)
     
     cleanup_thread = threading.Thread(target=run_cleanup_loop, daemon=True, name="Cleanup")
@@ -1173,9 +1176,9 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                 dry_run = config_manager.get("general", "dry_run") or False
                 reconciliation_done = BOT_STATE.get("reconciliation_done_today", False)
                 
-                if SMART_API_SESSION and not dry_run and not reconciliation_done:
+                if DHAN_API_SESSION and not dry_run and not reconciliation_done:
                      logger.info("🔄 Running Daily Reconciliation...")
-                     success = reconcile_state(SMART_API_SESSION)
+                     success = reconcile_state(DHAN_API_SESSION)
                      if success:
                          BOT_STATE["reconciliation_done_today"] = True
                          save_state(BOT_STATE)
@@ -1183,7 +1186,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                          logger.warning("Reconciliation Failed. Attempting to Re-Authenticate...")
                          new_session = get_dhan_session()
                          if new_session:
-                             SMART_API_SESSION = new_session
+                             DHAN_API_SESSION = new_session
                              smartApi = new_session # Update local reference
                              logger.info("Session Re-established successfully. ✅")
                          else:
