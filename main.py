@@ -542,7 +542,7 @@ def calculate_structure_based_sl(df, entry_price, vwap, ema20):
     # Logic: max(0.4%, 0.6 * ATR%) to allow Large Caps with small ATR
     # Hard Min: 0.4% (to cover fees/slippage)
     
-    current_atr = df.iloc[-1].get('ATR')
+    current_atr = df.iloc[-2].get('ATR') # Use confirmed candle for ATR
     dynamic_min_sl = min_sl_distance # Default to config (0.8%)
     
     if current_atr and current_atr > 0:
@@ -1527,8 +1527,8 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                             logger.warning(f"❌ Skipping {symbol}: Insufficient candle data")
                                             continue
                                         
-                                        # Get latest VWAP and EMA20
-                                        latest_candle = df_risk.iloc[-1]
+                                        # Get latest VWAP and EMA20 (Use confirmed candle to avoid repainting)
+                                        latest_candle = df_risk.iloc[-2]
                                         vwap = latest_candle.get('VWAP')
                                         ema20 = latest_candle.get('EMA_20')
                                         
