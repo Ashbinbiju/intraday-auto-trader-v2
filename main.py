@@ -121,6 +121,27 @@ def clear_pending_order(correlation_id):
         if 'pending_orders' in BOT_STATE:
             BOT_STATE['pending_orders'].pop(correlation_id, None)
 
+def check_and_register_pending_order(correlation_id, order_data):
+    """
+    Atomically checks if order is duplicate and registers it.
+    Returns True if registered (new), False if duplicate.
+    Prevents TOCTOU race conditions.
+    """
+    with state_lock:
+        if 'pending_orders' not in BOT_STATE:
+            BOT_STATE['pending_orders'] = {}
+            
+        if correlation_id in BOT_STATE['pending_orders']:
+            return False 
+            
+        BOT_STATE['pending_orders'][correlation_id] = {
+            'timestamp': time.time(),
+            'symbol': order_data.get('symbol'),
+            'action': order_data.get('action'),
+            'order_id': None 
+        }
+        return True
+
 def cleanup_pending_orders(smartApi):
     """
     Periodic cleanup: removes orders in final states from pending list.
@@ -213,13 +234,10 @@ def place_sell_order(smartApi, symbol, token, qty, reason="EXIT", correlation_id
     if not correlation_id:
         correlation_id = generate_correlation_id(symbol, reason)
     
-    # Check for duplicate (prevent double exits)
-    if is_duplicate_order(correlation_id):
+    # Atomic Check & Register (Prevents Race Conditions)
+    if not check_and_register_pending_order(correlation_id, {'symbol': symbol, 'action': reason}):
         logger.warning(f"⚠️ Duplicate SELL order prevented: {correlation_id}")
         return None
-    
-    # Register as pending
-    register_pending_order(correlation_id, {'symbol': symbol, 'action': reason})
     
     dry_run = config_manager.get("general", "dry_run")
     if dry_run:
