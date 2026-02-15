@@ -279,8 +279,8 @@ def calculate_sr_levels(df):
         
         pdh = prev_day['high']
         pdl = prev_day['low']
-        cdh = 0
-        cdl = 0
+        cdh = None
+        cdl = None
         
         if curr_day_date == ist_now_date:
             cdh = curr_day['high']
@@ -291,7 +291,7 @@ def calculate_sr_levels(df):
             # We must shift logic.
             pdh = curr_day['high'] # Yesterday becomes PDH
             pdl = curr_day['low']  # Yesterday becomes PDL
-            # CDH/CDL remains 0 (No data for today yet)
+            # CDH/CDL remains None (No data for today yet)
             
         return {
             "PDH": pdh,
