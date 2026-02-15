@@ -1040,6 +1040,12 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                 # Update Heartbeat
                 BOT_STATE.setdefault("heartbeat", {})["position_manager"] = time.time()
                 
+                # Check Market Status
+                is_open, _ = is_market_open()
+                if not is_open:
+                    time.sleep(60)
+                    continue
+
                 # Run every 5 seconds for fast updates
                 # Use global session to pick up re-authenticated sessions
                 manage_positions(DHAN_API_SESSION, t_map)
@@ -1093,6 +1099,13 @@ def run_bot_loop(async_loop=None, ws_manager=None):
         while BOT_STATE.get("is_running", True):
             try:
                 BOT_STATE.setdefault("heartbeat", {})["reconciliation"] = time.time()
+                
+                # Check Market Status
+                is_open, _ = is_market_open()
+                if not is_open:
+                    time.sleep(60)
+                    continue
+
                 # Use global session to pick up re-authenticated sessions
                 reconcile_positions_quick(DHAN_API_SESSION)
                 time.sleep(60)  # Every 60 seconds
@@ -1110,6 +1123,13 @@ def run_bot_loop(async_loop=None, ws_manager=None):
         while BOT_STATE.get("is_running", True):
             try:
                 BOT_STATE.setdefault("heartbeat", {})["cleanup"] = time.time()
+                
+                # Check Market Status (Cleanup might be allowed post-market, but let's restrict to save API)
+                is_open, _ = is_market_open()
+                if not is_open:
+                     time.sleep(60)
+                     continue
+
                 # Use global session to pick up re-authenticated sessions
                 cleanup_pending_orders(DHAN_API_SESSION)
                 time.sleep(300)  # Every 5 minutes
