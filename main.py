@@ -193,6 +193,19 @@ def place_buy_order(smartApi, symbol, token, qty, correlation_id=None):
         return True
 
     try:
+        # Idempotency Check (Prevent duplicate orders)
+        # Assuming correlation_id is provided by caller
+        if correlation_id:
+            order_data = {
+                "symbol": symbol,
+                "token": token,
+                "qty": qty,
+                "type": "BUY"
+            }
+            if not check_and_register_pending_order(correlation_id, order_data):
+                logger.warning(f"Prevented Duplicate BUY Order: {correlation_id}")
+                return None
+        
         orderparams = {
             "variety": "NORMAL",
             "tradingsymbol": symbol, # Fixed: Removed -EQ
@@ -1632,7 +1645,12 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                         logger.info(f"📊 Fixed Quantity Mode: {quantity} shares")
                                     
                                     # Place the order
-                                    orderId = place_buy_order(smartApi, symbol, token, quantity)
+                                    correlation_id = f"{symbol}_{int(time.time())}_BUY"
+                                    orderId = place_buy_order(smartApi, symbol, token, quantity, correlation_id)
+                                    
+                                    if not orderId:
+                                        logger.warning(f"⚠️ Buy Order Skipped (Duplicate or Failed): {symbol} | cID: {correlation_id}")
+                                        continue
                                     
                                     # Verify Order Status
                                     if orderId:
