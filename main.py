@@ -1684,7 +1684,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                         logger.info(f"📊 Fixed Quantity Mode: {quantity} shares")
                                     
                                     # Place the order
-                                    correlation_id = f"{symbol}_{int(time.time())}_BUY"
+                                    correlation_id = generate_correlation_id(symbol, "BUY")
                                     orderId = place_buy_order(smartApi, symbol, token, quantity, correlation_id)
                                     
                                     if not orderId:
