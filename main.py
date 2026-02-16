@@ -1684,6 +1684,12 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                         logger.info(f"📊 Fixed Quantity Mode: {quantity} shares")
                                     
                                     # Place the order
+                                    
+                                    # LAST SECOND SAFETY CHECK (Watchdog Race Condition)
+                                    if not BOT_STATE.get("is_trading_allowed", True):
+                                        logger.warning("🚨 Trading Disabled by Watchdog! Skipping remaining signals.")
+                                        break
+                                        
                                     correlation_id = generate_correlation_id(symbol, "BUY")
                                     orderId = place_buy_order(smartApi, symbol, token, quantity, correlation_id)
                                     
