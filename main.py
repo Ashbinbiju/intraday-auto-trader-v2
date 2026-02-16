@@ -532,11 +532,49 @@ def calculate_structure_based_sl(df, entry_price, vwap, ema20):
     if not valid_candidates:
         return None, "No valid structure found", 0
     
-    # Choose by priority FIRST, then by price (closest)
-    best_sl, reason = max(valid_candidates, key=lambda x: (priority[x[1]], x[0]))
+    # --- NEW WATERFALL LOGIC ---
     
-    # Calculate distance
-    sl_distance_pct = ((entry_price - best_sl) / entry_price) * 100
+    # 1. Calc Dynamic Min SL first
+    current_atr = df.iloc[-2].get('ATR')
+    dynamic_min_sl = min_sl_distance
+    
+    if current_atr and current_atr > 0:
+        atr_pct = (current_atr / entry_price) * 100
+        dynamic_min = max(0.4, 0.6 * atr_pct)
+        dynamic_min_sl = min(min_sl_distance, dynamic_min)
+
+    # 2. Score & Filter Candidates
+    enhanced_candidates = []
+    normalized_priority = {"Swing Low": 3, "VWAP": 2, "EMA20": 1}
+    
+    for sl, r in valid_candidates:
+        prio = normalized_priority.get(r, 0)
+        dist_pct = ((entry_price - sl) / entry_price) * 100
+        
+        # Filter out Too Tight (< Min SL)
+        if dist_pct < dynamic_min_sl:
+            continue
+            
+        enhanced_candidates.append({"sl": sl, "reason": r, "prio": prio, "dist": dist_pct})
+
+    if not enhanced_candidates:
+        return None, f"All structures too tight (< {dynamic_min_sl:.2f}%)", 0.0
+
+    # 3. Sort by Priority (High -> Low)
+    enhanced_candidates.sort(key=lambda x: x["prio"], reverse=True)
+    
+    # 4. Select First within Max Distance
+    for cand in enhanced_candidates:
+         if cand["dist"] <= max_sl_distance:
+             return cand["sl"], f"{cand['reason']} ({cand['dist']:.2f}%)", cand["dist"]
+             
+    # 5. Reject if all too wide
+    best_candidate_dist = enhanced_candidates[0]["dist"]
+    return None, f"All structures too wide (> {max_sl_distance}%)", best_candidate_dist
+
+    # --- DEAD CODE BELOW (Short-Circuited) ---
+    best_sl = entry_price # Dummy to prevent UnboundLocalError
+    sl_distance_pct = 0
     
     # Safety Check: Dynamic Min SL based on ATR
     # Logic: max(0.4%, 0.6 * ATR%) to allow Large Caps with small ATR
