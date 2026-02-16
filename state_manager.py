@@ -27,6 +27,7 @@ def load_state():
         "top_sectors": [],
         "total_trades_today": 0,
         "stock_trade_counts": {},
+        "total_pnl": 0.0,
         "last_reset_date": "" # Track the last reset date
     }
     

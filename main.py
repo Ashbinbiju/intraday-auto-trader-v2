@@ -12,6 +12,7 @@ from config import config_manager
 from state_manager import load_state, save_state, start_auto_save, state_lock
 from database import log_trade_to_db
 from async_scanner import AsyncScanner
+from telegram_helper import send_telegram_message
 
 # Configure Logging
 import datetime
@@ -226,6 +227,8 @@ def place_buy_order(smartApi, symbol, token, qty, correlation_id=None):
             if correlation_id in BOT_STATE.get('pending_orders', {}):
                 BOT_STATE['pending_orders'][correlation_id]['order_id'] = orderId
         
+        send_telegram_message(f"🔵 **BUY ORDER PLACED**\nSymbol: {symbol}\nQty: {qty}")
+        
         return orderId
     except Exception as e:
         logger.error(f"Order Placement Failed for {symbol}: {e} | cID: {correlation_id}")
@@ -297,18 +300,18 @@ def place_sell_order_with_retry(smartApi, symbol, token, qty, reason, max_retrie
     
     if not order_id:
         logger.critical(f"🚨 Exit order placement FAILED for {symbol} ({reason})")
-        return None, False
+        return None, False, 0.0
     
     # STEP 2: Retry VERIFICATION (not placement)
     for attempt in range(1, max_retries + 1):
         logger.info(f"Verification attempt {attempt}/{max_retries} for {symbol} (Order: {order_id})")
         
         time.sleep(0.5)  # Wait for broker processing
-        is_success, status, _ = verify_order_status(smartApi, order_id)
+        is_success, status, avg_price = verify_order_status(smartApi, order_id)
         
         if is_success:
             logger.info(f"✅ Exit confirmed: {symbol} ({reason}) | Order: {order_id}")
-            return order_id, True
+            return order_id, True, avg_price
         else:
             logger.warning(f"⚠️ Verification attempt {attempt} status: {status}")
         
@@ -328,10 +331,10 @@ def place_sell_order_with_retry(smartApi, symbol, token, qty, reason, max_retrie
         )
         if symbol_found:
             logger.info(f"✅ Position confirmed closed via broker check: {symbol}")
-            return order_id, True
+            return order_id, True, 0.0 # Price unknown via this method, fallback to LTP
     
     logger.critical(f"🚨 Exit verification FAILED for {symbol} ({reason}) | Order: {order_id}")
-    return order_id, False  # Return order_id anyway (order was placed, just couldn't verify)
+    return order_id, False, 0.0  # Return order_id anyway (order was placed, just couldn't verify)
 
 def get_account_balance(smartApi, dry_run):
     """
@@ -753,7 +756,7 @@ def manage_positions(smartApi, token_map):
                         exit_qty = pos['qty']
                 
                 if exit_qty > 0:
-                    order_id, verified = place_sell_order_with_retry(smartApi, symbol, token, exit_qty, reason="TIME_EXIT")
+                    order_id, verified, exec_price = place_sell_order_with_retry(smartApi, symbol, token, exit_qty, reason="TIME_EXIT")
                     
                     with state_lock:
                         pos = BOT_STATE["positions"].get(symbol)
@@ -761,8 +764,15 @@ def manage_positions(smartApi, token_map):
                         if pos and order_id and verified:
                             pos["exit_in_progress"] = False 
                             pos['status'] = "CLOSED"
-                            pos['exit_price'] = exit_price 
+                            pos['exit_price'] = exec_price if exec_price > 0 else exit_price 
                             pos['exit_reason'] = "TIME_EXIT"
+                            
+                            # --- P&L Calculation & Telegram ---
+                            pnl = (pos['exit_price'] - pos['entry_price']) * pos['qty']
+                            BOT_STATE["total_pnl"] = BOT_STATE.get("total_pnl", 0.0) + pnl
+                            msg = f"🔴 **SELL EXECUTION (Time)**\nSymbol: {symbol}\nQty: {pos['qty']}\nBuy: {pos['entry_price']}\nSell: {pos['exit_price']}\nP&L: {pnl:.2f}\nTotal P&L: {BOT_STATE['total_pnl']:.2f}"
+                            send_telegram_message(msg)
+                            
                             save_state(BOT_STATE)
                         elif pos and order_id and not verified:
                              # Exits unverified: Don't close, but keep exit_in_progress=True to prevent duplicates
@@ -883,16 +893,23 @@ def manage_positions(smartApi, token_map):
             # EXECUTION PHASE (Outside Lock)
             if exit_action:
                 reason_code, qty, reason_log = exit_action
-                order_id, verified = place_sell_order_with_retry(smartApi, symbol, token, qty, reason=reason_code)
+                order_id, verified, exec_price = place_sell_order_with_retry(smartApi, symbol, token, qty, reason=reason_code)
                 
                 with state_lock:
                     pos = BOT_STATE["positions"].get(symbol)
                     
                     if pos and order_id and verified:
-                        pos["exit_in_progress"] = False # Reset only on success? No, reset on verified.
+                        pos["exit_in_progress"] = False # Reset only on verified.
                         pos['status'] = "CLOSED"
-                        pos['exit_price'] = current_ltp 
+                        pos['exit_price'] = exec_price if exec_price > 0 else current_ltp
                         pos['exit_reason'] = reason_code
+                        
+                        # --- P&L Calculation & Telegram ---
+                        pnl = (pos['exit_price'] - pos['entry_price']) * pos['qty']
+                        BOT_STATE["total_pnl"] = BOT_STATE.get("total_pnl", 0.0) + pnl
+                        msg = f"🔴 **SELL EXECUTION**\nSymbol: {symbol}\nQty: {pos['qty']}\nBuy: {pos['entry_price']}\nSell: {pos['exit_price']}\nP&L: {pnl:.2f}\nTotal P&L: {BOT_STATE['total_pnl']:.2f}\nReason: {reason_code}"
+                        send_telegram_message(msg)
+                        
                         save_state(BOT_STATE)
                     elif pos and order_id and not verified:
                          logger.warning(f"⚠️ Exit {reason_code} unverified for {symbol}. Keep flag TRUE. Wait for sync.")
