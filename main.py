@@ -1563,8 +1563,9 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                                 # 2. Confirmation Zone (1.2 - 1.5)
                                                 elif 1.2 <= rr_to_res < 1.5:
                                                     # Require Extra Strength: Volume > 1.8x OR Breakout > CDH
+                                                    # Require Extra Strength: Volume > 1.8x OR Breakout > CDH
                                                     current_vol = latest_candle.get('volume', 0)
-                                                    avg_vol = df_risk['volume'].mean()
+                                                    avg_vol = latest_candle.get('Volume_SMA_20', 0)
                                                     vol_ratio = current_vol / avg_vol if avg_vol > 0 else 0
                                                     
                                                     is_high_vol = vol_ratio > 1.8
