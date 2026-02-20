@@ -886,18 +886,50 @@ def manage_positions(dhan, token_map):
                             pos["exit_in_progress"] = True
                             pos["exit_requested_ts"] = time.time()
                 
-                # 5. BREAKEVEN LOCK (If no exit)
+                # 5. CONTINUOUS TRAILING STOP LOSS (TSL)
                 if not exit_action:
-                    original_sl = pos.get('original_sl', sl_price)
+                    # Calculate original risk to define "1R"
+                    original_sl = pos.get('original_sl', pos.get('sl')) 
+                    
+                    # Store original_sl safely if it doesn't exist yet
+                    if 'original_sl' not in pos:
+                        pos['original_sl'] = original_sl
+                        
                     risk_per_share = entry_price - original_sl
-                    if risk_per_share > 0 and not pos.get('is_breakeven_active'):
-                        target_move = entry_price + risk_per_share 
-                        if pos['highest_ltp'] >= target_move:
-                            logger.info(f"🔒 Breakeven Triggered for {symbol}. Moving SL to {entry_price}")
-                            pos['sl'] = entry_price * 1.001 
-                            pos['is_breakeven_active'] = True
+                    
+                    if risk_per_share > 0:
+                        # Calculate the maximum R:R achieved at the absolute peak
+                        highest_ltp = pos.get('highest_ltp', current_ltp)
+                        max_profit_achieved = highest_ltp - entry_price
+                        max_rr = max_profit_achieved / risk_per_share
+                        
+                        proposed_sl = pos['sl'] # Default to no movement
+                        level_achieved = pos.get('tsl_level', 0)
+                        
+                        # --- Level 1: Breakeven (At 1R Profit) ---
+                        if max_rr >= 1.0 and level_achieved < 1:
+                            proposed_sl = entry_price * 1.001 # Entry + 0.1% to cover fees
+                            new_level = 1
+                            log_msg = f"🔒 Trailing SL Level 1: {symbol} hit +1R. SL moved to Breakeven ({proposed_sl:.2f})"
+                            
+                        # --- Level 2: Lock 1R (At 2R Profit) ---
+                        elif max_rr >= 2.0 and level_achieved < 2:
+                            proposed_sl = entry_price + (1.0 * risk_per_share)
+                            new_level = 2
+                            log_msg = f"🔒 Trailing SL Level 2: {symbol} hit +2R. SL moved to lock +1R ({proposed_sl:.2f})"
+                            
+                        # --- Level 3: Lock 2R (At 3R Profit) ---
+                        elif max_rr >= 3.0 and level_achieved < 3:
+                            proposed_sl = entry_price + (2.0 * risk_per_share)
+                            new_level = 3
+                            log_msg = f"🔒 Trailing SL Level 3: {symbol} hit +3R. SL moved to lock +2R ({proposed_sl:.2f})"
+                        
+                        # Update State if SL strictly moves UP
+                        if proposed_sl > pos['sl']:
+                            pos['sl'] = proposed_sl
+                            pos['tsl_level'] = new_level
+                            logger.info(log_msg)
                             save_state(BOT_STATE)
-
             # EXECUTION PHASE (Outside Lock)
             if exit_action:
                 reason_code, qty, reason_log = exit_action
