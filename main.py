@@ -640,7 +640,7 @@ def calculate_structure_based_tp(entry_price, sl_price, df, previous_day_high=No
     
     # Option 1: Previous Day High (if available and above entry)
     if previous_day_high and previous_day_high > entry_price:
-        candidates.append((previous_day_high, "PDH"))
+        candidates.append((previous_day_high * 0.999, "PDH"))
         
     # Option 1.5: Dynamic Auto-Pivot Resistances
     if dynamic_resistances:
@@ -648,7 +648,7 @@ def calculate_structure_based_tp(entry_price, sl_price, df, previous_day_high=No
             if res > entry_price:
                 dist_pct = ((res - entry_price) / entry_price) * 100
                 if dist_pct >= 0.6:  # Minimum distance to avoid front-running chop
-                    candidates.append((res, "Pivot Res"))
+                    candidates.append((res * 0.999, "Pivot Res"))
     
     # Option 2: Nearest Swing High (last 20 candles)
     recent_candles = df.iloc[-20:]
@@ -658,7 +658,7 @@ def calculate_structure_based_tp(entry_price, sl_price, df, previous_day_high=No
     if swing_high > entry_price:
         distance_pct = ((swing_high - entry_price) / entry_price) * 100
         if distance_pct >= 0.6:  # Minimum 0.6% away to avoid front-running
-            candidates.append((swing_high, "Swing High"))
+            candidates.append((swing_high * 0.999, "Swing High"))
     
     # Option 3: 1.5R (Minimum acceptable)
     candidates.append((min_tp, "1.5R Minimum"))
