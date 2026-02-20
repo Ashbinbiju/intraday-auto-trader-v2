@@ -302,3 +302,83 @@ def calculate_sr_levels(df):
     except Exception as e:
         # Logging not available here
         return None
+
+def get_dynamic_sr_levels(df, prd=10, max_pivots=20, channel_w_pct=10, max_sr=5, min_strength=2):
+    """
+    Translates TradingView Auto-Pivot Support/Resistance Logic.
+    Returns a list of dicts with 'hi', 'lo', 'mid', 'strength'.
+    """
+    if df is None or len(df) < prd * 2:
+        return []
+        
+    df = df.copy()
+    
+    # Calculate rolling highest/lowest for channel width calculation (300 bars)
+    prd_highest = df['high'].rolling(300, min_periods=1).max().iloc[-1]
+    prd_lowest = df['low'].rolling(300, min_periods=1).min().iloc[-1]
+    
+    # 1. Identify Pivot Highs and Lows
+    # A pivot is a local max/min over a window of 2*prd + 1
+    df['roll_high'] = df['high'].rolling(window=2*prd+1, center=True).max()
+    df['roll_low'] = df['low'].rolling(window=2*prd+1, center=True).min()
+    
+    # Extract Pivot bars
+    pivot_bars = df[(df['high'] == df['roll_high']) | (df['low'] == df['roll_low'])]
+    
+    pivots = []
+    # Match chronological order
+    for _, row in pivot_bars.iterrows():
+        if row['high'] == row['roll_high']:
+            pivots.append(row['high'])
+        if row['low'] == row['roll_low']:
+            pivots.append(row['low'])
+            
+    # Keep only the last `max_pivots` (e.g. 20)
+    pivots = pivots[-max_pivots:]
+    
+    # Reverse to process most recent first (matching TV array.unshift behavior)
+    pivots.reverse()
+    
+    # 2. Channel Width for Clustering
+    cwidth = (prd_highest - prd_lowest) * channel_w_pct / 100.0
+    
+    sr_levels = []
+    
+    # 3. Cluster Pivots into S/R Zones
+    for i in range(len(pivots)):
+        lo = pivots[i]
+        hi = pivots[i]
+        numpp = 0
+        
+        # Calculate cluster boundaries and count pivots inside
+        for j in range(len(pivots)):
+            cpp = pivots[j]
+            wdth = (hi - cpp) if cpp <= lo else (cpp - lo)
+            if wdth <= cwidth:
+                lo = min(lo, cpp)
+                hi = max(hi, cpp)
+                numpp += 1
+                
+        # 4. Check for Overlaps with existing clusters
+        overlaps = False
+        for k in range(len(sr_levels)):
+            ex_hi = sr_levels[k]['hi']
+            ex_lo = sr_levels[k]['lo']
+            ex_str = sr_levels[k]['strength']
+            
+            # Overlap check
+            if (ex_hi >= lo and ex_hi <= hi) or (ex_lo >= lo and ex_lo <= hi):
+                overlaps = True
+                # Replace if the new cluster has equal or greater strength
+                if numpp >= ex_str:
+                    sr_levels[k] = {'hi': hi, 'lo': lo, 'strength': numpp, 'mid': round((hi+lo)/2, 2)}
+                break
+                
+        # 5. Add new non-overlapping cluster if it meets minimum strength
+        if not overlaps:
+            if numpp >= min_strength:
+                sr_levels.append({'hi': hi, 'lo': lo, 'strength': numpp, 'mid': round((hi+lo)/2, 2)})
+                
+    # 6. Sort by strength descending and limit to `max_sr` zones
+    sr_levels.sort(key=lambda x: x['strength'], reverse=True)
+    return sr_levels[:max_sr]

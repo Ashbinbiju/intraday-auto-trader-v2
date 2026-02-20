@@ -623,10 +623,10 @@ def calculate_structure_based_sl(df, entry_price, vwap, ema20):
     return best_sl, f"{reason} ({sl_distance_pct:.2f}%)", sl_distance_pct
 
 
-def calculate_structure_based_tp(entry_price, sl_price, df, previous_day_high=None):
+def calculate_structure_based_tp(entry_price, sl_price, df, previous_day_high=None, dynamic_resistances=None):
     """
     Calculate Take-Profit based on market structure.
-    Priority: PDH > Swing High > 1.5R minimum.
+    Priority: PDH > Pivot Res > Swing High > 1.5R minimum.
     
     Returns: (tp_price, tp_reason, risk_reward_ratio) or (None, reason, 0)
     """
@@ -641,6 +641,14 @@ def calculate_structure_based_tp(entry_price, sl_price, df, previous_day_high=No
     # Option 1: Previous Day High (if available and above entry)
     if previous_day_high and previous_day_high > entry_price:
         candidates.append((previous_day_high, "PDH"))
+        
+    # Option 1.5: Dynamic Auto-Pivot Resistances
+    if dynamic_resistances:
+        for res in dynamic_resistances:
+            if res > entry_price:
+                dist_pct = ((res - entry_price) / entry_price) * 100
+                if dist_pct >= 0.6:  # Minimum distance to avoid front-running chop
+                    candidates.append((res, "Pivot Res"))
     
     # Option 2: Nearest Swing High (last 20 candles)
     recent_candles = df.iloc[-20:]
@@ -1542,39 +1550,17 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                         logger.info(f"✅ 15M Bias Confirmed: {symbol} | {bias_reason}")
                                         
                                         # STEP 1.5: S/R Resistance Check (New)
-                                        # Use the 15m data (multi-day) to find PDH/CDH
-                                        from indicators import calculate_sr_levels
+                                        # Use the 15m data (multi-day) to find static S/R (PDH/CDH)
+                                        from indicators import calculate_sr_levels, get_dynamic_sr_levels
                                         sr_levels = calculate_sr_levels(df_15m_recheck)
                                         
-                                        nearest_res = None
-                                        
+                                        static_resistances = []
+                                        pdh_val = None
                                         if sr_levels:
                                             pdh_val = sr_levels.get('PDH')
                                             cdh_val = sr_levels.get('CDH')
-                                            
-                                            # Identify Resistances ABOVE Current Price
-                                            resistances = []
-                                            if pdh_val and pdh_val > price:
-                                                resistances.append(pdh_val)
-                                            if cdh_val and cdh_val > price:
-                                                resistances.append(cdh_val)
-                                            
-                                            if resistances:
-                                                nearest_res = min(resistances)
-                                                
-                                                # Rule 1: Resistance Proximity
-                                                # Threshold: 0.25% (Safety)
-                                                dist_pct = (nearest_res - price) / price * 100
-                                                
-                                                if dist_pct < 0.25:
-                                                    logger.warning(f"❌ Trade REJECTED: {symbol} | Too close to Resistance (Res: {nearest_res:.2f}, Dist: {dist_pct:.2f}% < 0.25%)")
-                                                    continue
-                                                else:
-                                                    logger.info(f"✅ S/R Check Pass: Distance to Res {dist_pct:.2f}% (> 0.25%)")
-                                            else:
-                                                logger.info(f"🚀 Blue Sky Breakout: {symbol} price {price} > PDH/CDH (No Overhead Resistance)")
-                                        else:
-                                            logger.warning(f"⚠️ S/R Data Unavailable for {symbol}, proceeding with caution.")
+                                            if pdh_val and pdh_val > price: static_resistances.append(pdh_val)
+                                            if cdh_val and cdh_val > price: static_resistances.append(cdh_val)
                                         
                                         # STEP 2: Fetch 5-minute candles for structure analysis
                                         df_risk = fetch_candle_data(dhan, token, symbol, "FIVE_MINUTE")
@@ -1599,6 +1585,26 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                             logger.warning(f"❌ Skipping {symbol}: Missing VWAP or EMA20")
                                             continue
                                         
+                                        # Calculate Dynamic Auto-Pivot S/R using the 5M chart
+                                        dynamic_resistances = []
+                                        dyn_levels = get_dynamic_sr_levels(df_risk)
+                                        for level in dyn_levels:
+                                            # If pivot zone is acting as resistance above current price
+                                            if level['lo'] > price: 
+                                                dynamic_resistances.append(level['lo'])
+                                                
+                                        all_resistances = static_resistances + dynamic_resistances
+                                        nearest_res = min(all_resistances) if all_resistances else None
+                                        
+                                        if nearest_res:
+                                            dist_pct = (nearest_res - price) / price * 100
+                                            if dist_pct < 0.25:
+                                                logger.warning(f"❌ Trade REJECTED: {symbol} | Too close to Resistance (Res: {nearest_res:.2f}, Dist: {dist_pct:.2f}% < 0.25%)")
+                                                continue
+                                            logger.info(f"✅ S/R Check Pass: Nearest Res {nearest_res:.2f} (Dist: {dist_pct:.2f}%)")
+                                        else:
+                                            logger.info(f"🚀 Blue Sky Breakout: {symbol} price {price} > All known Resistances")
+                                            
                                         # Calculate structure-based SL
                                         sl_price, sl_reason, sl_distance = calculate_structure_based_sl(
                                             df_risk, price, vwap, ema20
@@ -1653,7 +1659,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                         
                                         # Calculate structure-based TP
                                         target_price, tp_reason, rr_ratio = calculate_structure_based_tp(
-                                            price, sl_price, df_risk, pdh
+                                            price, sl_price, df_risk, pdh, dynamic_resistances
                                         )
                                         
                                         if target_price is None:
