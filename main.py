@@ -143,7 +143,7 @@ def check_and_register_pending_order(correlation_id, order_data):
         }
         return True
 
-def cleanup_pending_orders(smartApi):
+def cleanup_pending_orders(dhan):
     """
     Periodic cleanup: removes orders in final states from pending list.
     Prevents memory bloat from stale pending orders.
@@ -169,7 +169,7 @@ def cleanup_pending_orders(smartApi):
             
             try:
                 # Check if order is in final state
-                status = get_order_status(smartApi, order_id)
+                status = get_order_status(dhan, order_id)
                 if status in ["FILLED", "TRADED", "REJECTED", "CANCELLED", "EXPIRED"]:
                     logger.info(f"Cleanup: Removing finalized order {correlation_id} (Status: {status})")
                     clear_pending_order(correlation_id)
@@ -184,7 +184,7 @@ def cleanup_pending_orders(smartApi):
         logger.error(f"Pending order cleanup error: {e}")
 # ==================================
 
-def place_buy_order(smartApi, symbol, token, qty, correlation_id=None):
+def place_buy_order(dhan, symbol, token, qty, correlation_id=None):
     """
     Places a Buy Order.
     """
@@ -219,7 +219,7 @@ def place_buy_order(smartApi, symbol, token, qty, correlation_id=None):
         }
         # Use helper place_order_api
         from dhan_api_helper import place_order_api
-        orderId = place_order_api(smartApi, orderparams)
+        orderId = place_order_api(dhan, orderparams)
         logger.info(f"Order Placed for {symbol} | Order ID: {orderId} | cID: {correlation_id}")
         
         # Store order_id with correlation_id for later cleanup (thread-safe)
@@ -237,12 +237,12 @@ def place_buy_order(smartApi, symbol, token, qty, correlation_id=None):
         return None
 
 # Shared State for API
-SMART_API_SESSION = None
+DHAN_API_SESSION = None
 TOKEN_MAP = {}
 
 
 
-def place_sell_order(smartApi, symbol, token, qty, reason="EXIT", correlation_id=None):
+def place_sell_order(dhan, symbol, token, qty, reason="EXIT", correlation_id=None):
     """
     Places a Sell Order to exit a position with idempotency support.
     """
@@ -274,7 +274,7 @@ def place_sell_order(smartApi, symbol, token, qty, reason="EXIT", correlation_id
         }
         # Use helper place_order_api
         from dhan_api_helper import place_order_api
-        orderId = place_order_api(smartApi, orderparams)
+        orderId = place_order_api(dhan, orderparams)
         logger.info(f"SELL Order Placed for {symbol} ({reason}) | Order ID: {orderId} | cID: {correlation_id}")
         
         # Store order_id with correlation_id for later cleanup (thread-safe)
@@ -289,14 +289,14 @@ def place_sell_order(smartApi, symbol, token, qty, reason="EXIT", correlation_id
         clear_pending_order(correlation_id)
         return None
 
-def place_sell_order_with_retry(smartApi, symbol, token, qty, reason, max_retries=3):
+def place_sell_order_with_retry(dhan, symbol, token, qty, reason, max_retries=3):
     """
     Places exit order with retry logic.
     CRITICAL: Places order ONCE, retries VERIFICATION to prevent duplicate sells.
     """
     # STEP 1: Place exit order ONCE
     logger.info(f"Placing exit order for {symbol} ({reason})")
-    order_id = place_sell_order(smartApi, symbol, token, qty, reason)
+    order_id = place_sell_order(dhan, symbol, token, qty, reason)
     
     if not order_id:
         logger.critical(f"🚨 Exit order placement FAILED for {symbol} ({reason})")
@@ -307,7 +307,7 @@ def place_sell_order_with_retry(smartApi, symbol, token, qty, reason, max_retrie
         logger.info(f"Verification attempt {attempt}/{max_retries} for {symbol} (Order: {order_id})")
         
         time.sleep(0.5)  # Wait for broker processing
-        is_success, status, avg_price = verify_order_status(smartApi, order_id)
+        is_success, status, avg_price = verify_order_status(dhan, order_id)
         
         if is_success:
             logger.info(f"✅ Exit confirmed: {symbol} ({reason}) | Order: {order_id}")
@@ -321,7 +321,7 @@ def place_sell_order_with_retry(smartApi, symbol, token, qty, reason, max_retrie
     # All verification attempts exhausted - check positions as last resort
     logger.warning(f"🔍 Verification timeout for {symbol}. Checking broker positions...")
     from dhan_api_helper import fetch_net_positions
-    live_positions = fetch_net_positions(smartApi)
+    live_positions = fetch_net_positions(dhan)
     
     if live_positions:
         # Check if position is closed (order likely filled)
@@ -336,7 +336,7 @@ def place_sell_order_with_retry(smartApi, symbol, token, qty, reason, max_retrie
     logger.critical(f"🚨 Exit verification FAILED for {symbol} ({reason}) | Order: {order_id}")
     return order_id, False, 0.0  # Return order_id anyway (order was placed, just couldn't verify)
 
-def get_account_balance(smartApi, dry_run):
+def get_account_balance(dhan, dry_run):
     """
     Fetches account balance for position sizing.
     For paper trading, uses configured virtual balance.
@@ -349,8 +349,8 @@ def get_account_balance(smartApi, dry_run):
     
     try:
         # Dhan Logic
-        if hasattr(smartApi, 'get_fund_limits'):
-             fund_resp = smartApi.get_fund_limits()
+        if hasattr(dhan, 'get_fund_limits'):
+             fund_resp = dhan.get_fund_limits()
              # Dhan response: {'status': 'success', 'data': {'availabelBalance': 1000.0, ...}} or list?
              # Check docs or structure.
              # Usually: {'status': 'success', 'data': {'availabelBalance': 0.0, 'openingBalance': 0.0}}
@@ -363,8 +363,8 @@ def get_account_balance(smartApi, dry_run):
                  return float(available_balance)
         
         # Fallback/Legacy (Angel)
-        elif hasattr(smartApi, 'rmsLimit'):
-            rmsLimit = smartApi.rmsLimit()
+        elif hasattr(dhan, 'rmsLimit'):
+            rmsLimit = dhan.rmsLimit()
             if rmsLimit and 'data' in rmsLimit:
                 available_balance = rmsLimit['data'].get('availablecash', 0)
                 logger.info(f"📊 [LIVE] Account balance fetched: ₹{float(available_balance):,.0f}")
@@ -675,7 +675,7 @@ def calculate_structure_based_tp(entry_price, sl_price, df, previous_day_high=No
     return best_tp, f"{reason} (R:R {rr_ratio:.1f})", rr_ratio
 
 
-def manage_positions(smartApi, token_map):
+def manage_positions(dhan, token_map):
     """
     Checks all active positions for SL, Target, and Trailing SL.
     Thread-Safe Implementation.
@@ -715,7 +715,7 @@ def manage_positions(smartApi, token_map):
                 logger.warning(f"❌ Token MISSING for {s}")
         
         if bulk_tokens:
-            live_prices = fetch_market_feed_bulk(smartApi, bulk_tokens)
+            live_prices = fetch_market_feed_bulk(dhan, bulk_tokens)
             # logger.info(f"Fetched live prices for {len(bulk_tokens)} tokens.")
             # logger.info(f"LIVE PRICES: {live_prices}") # DEBUG REMOVED
         else:
@@ -739,7 +739,7 @@ def manage_positions(smartApi, token_map):
                 # Fetch current LTP before closing
                 time.sleep(0.2)  # Throttle
                 # FIX: Use fetch_ltp and remove -EQ checks
-                current_ltp_check = fetch_ltp(smartApi, token, symbol)
+                current_ltp_check = fetch_ltp(dhan, token, symbol)
                 exit_price = 0
                 
                 if current_ltp_check is not None:
@@ -756,7 +756,7 @@ def manage_positions(smartApi, token_map):
                         exit_qty = pos['qty']
                 
                 if exit_qty > 0:
-                    order_id, verified, exec_price = place_sell_order_with_retry(smartApi, symbol, token, exit_qty, reason="TIME_EXIT")
+                    order_id, verified, exec_price = place_sell_order_with_retry(dhan, symbol, token, exit_qty, reason="TIME_EXIT")
                     
                     with state_lock:
                         pos = BOT_STATE["positions"].get(symbol)
@@ -807,7 +807,7 @@ def manage_positions(smartApi, token_map):
             tech_breakdown = False
             tech_reason_str = ""
             try:
-                df_tech = fetch_candle_data(smartApi, token, symbol, "FIVE_MINUTE")
+                df_tech = fetch_candle_data(dhan, token, symbol, "FIVE_MINUTE")
                 if df_tech is not None:
                     df_tech = calculate_indicators(df_tech)
                     
@@ -893,7 +893,7 @@ def manage_positions(smartApi, token_map):
             # EXECUTION PHASE (Outside Lock)
             if exit_action:
                 reason_code, qty, reason_log = exit_action
-                order_id, verified, exec_price = place_sell_order_with_retry(smartApi, symbol, token, qty, reason=reason_code)
+                order_id, verified, exec_price = place_sell_order_with_retry(dhan, symbol, token, qty, reason=reason_code)
                 
                 with state_lock:
                     pos = BOT_STATE["positions"].get(symbol)
@@ -931,7 +931,7 @@ def manage_positions(smartApi, token_map):
 
 from database import log_trade_execution
 
-def reconcile_state(smartApi):
+def reconcile_state(dhan):
     """
     Syncs BOT_STATE with Broker's Live Positions.
     Broker is the SOURCE OF TRUTH.
@@ -939,7 +939,7 @@ def reconcile_state(smartApi):
     """
     logger.info("Starting Startup Reconciliation...")
     try:
-        live_positions = fetch_net_positions(smartApi)
+        live_positions = fetch_net_positions(dhan)
         if live_positions is None:
             logger.error("Reconciliation Failed: Could not fetch positions.")
             return False # Failure
@@ -997,13 +997,13 @@ def reconcile_state(smartApi):
     
     return True # Success
 
-def reconcile_positions_quick(smartApi):
+def reconcile_positions_quick(dhan):
     """
     Lightweight reconciliation - open positions only.
     Runs every 60s to catch orphans/ghosts mid-day.
     """
     try:
-        live_positions = fetch_net_positions(smartApi)
+        live_positions = fetch_net_positions(dhan)
         if live_positions is None:
             logger.warning("Quick reconciliation: Failed to fetch positions")
             return
@@ -1072,7 +1072,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
     Background task to run the bot loop.
     Accepts async_loop and ws_manager to broadcast updates via WebSockets.
     """
-    global BOT_STATE, SMART_API_SESSION, TOKEN_MAP
+    global BOT_STATE, DHAN_API_SESSION, TOKEN_MAP
     BOT_STATE["is_running"] = True
     
     logger.info("Starting Auto Buy/Sell Bot...")
@@ -1146,7 +1146,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
         return
     
     DHAN_API_SESSION = dhan 
-    smartApi = dhan  # Legacy alias - to be refactored eventually 
+    dhan = dhan  # Legacy alias - to be refactored eventually 
 
     # 2. Load Dhan Instrument Map
     token_map = load_dhan_instrument_map()
@@ -1297,7 +1297,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                          new_session = get_dhan_session()
                          if new_session:
                              DHAN_API_SESSION = new_session
-                             smartApi = new_session # Update local reference
+                             dhan = new_session # Update local reference
                              logger.info("Session Re-established successfully. ✅")
                          else:
                              logger.error("Session Re-authentication Failed. Will retry next cycle.")
@@ -1312,8 +1312,8 @@ def run_bot_loop(async_loop=None, ws_manager=None):
 
                 # --- 🔍 TOKEN HEALTH CHECK ---
                 from dhan_api_helper import check_connection
-                if smartApi:
-                    is_valid, reason = check_connection(smartApi)
+                if dhan:
+                    is_valid, reason = check_connection(dhan)
                     if not is_valid:
                          if reason == "TOKEN_EXPIRED":
                              logger.critical("🚨 DHAN TOKEN EXPIRED! PAUSING BOT. UPDATE CONFIG.")
@@ -1330,7 +1330,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
     
                 # --- Manage Active Positions ---
                 # Moved to dedicated thread for real-time updates!
-                # manage_positions(smartApi, token_map)
+                # manage_positions(dhan, token_map)
                 # -------------------------------
                 
                 # BROADCAST AFTER MANAGEMENT (Price updates, exits)
@@ -1464,8 +1464,8 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                 # -- ASYNC BATCH SCAN --
                 if stocks_to_scan:
                     # Initialize Scanner with fresh SmartAPI Session Object
-                    # Legacy: Pass token. New: Pass smartApi object for robustness.
-                    scanner = AsyncScanner("UNUSED_TOKEN", smartApi=smartApi)
+                    # Legacy: Pass token. New: Pass dhan object for robustness.
+                    scanner = AsyncScanner("UNUSED_TOKEN", dhan=dhan)
                     
                     # Fetch Persistent Index Memory (High/Low Cache)
                     # This fixes the "Post-Market 0.0" data issue by remembering valid High/Low from earlier.
@@ -1506,6 +1506,14 @@ def run_bot_loop(async_loop=None, ws_manager=None):
     
                         # --- AUTO BUY LOGIC (Structure-Based Risk) ---
                         if message.startswith("Strong Buy"):
+                            # STRICT TIME CHECK: Do not enter new trades after trading_end_time
+                            trading_end_time = config_manager.get("limits", "trading_end_time")
+                            ist_now = get_ist_now()
+                            current_time_str = ist_now.strftime("%H:%M")
+                            if current_time_str >= trading_end_time:
+                                logger.info(f"⏳ Ignoring Buy Signal for {symbol}: Current time {current_time_str} is past trading end time {trading_end_time}.")
+                                continue
+
                             current_trades = len([p for p in BOT_STATE["positions"].values() if p["status"] == "OPEN"])
                             if current_trades < max_trades_day:
                                 logger.info(f"🚀 Evaluating BUY for {symbol} at {price}")
@@ -1517,7 +1525,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                     if use_structure:
                                         # STEP 1: Re-validate 15M Bias (The Golden Rule)
                                         # Signals could be queued, market may have changed since scanner ran
-                                        df_15m_recheck = fetch_candle_data(smartApi, token, symbol, "FIFTEEN_MINUTE")
+                                        df_15m_recheck = fetch_candle_data(dhan, token, symbol, "FIFTEEN_MINUTE")
                                         
                                         if df_15m_recheck is None or df_15m_recheck.empty:
                                             logger.warning(f"❌ Skipping {symbol}: Unable to fetch 15M data for re-validation")
@@ -1569,7 +1577,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                             logger.warning(f"⚠️ S/R Data Unavailable for {symbol}, proceeding with caution.")
                                         
                                         # STEP 2: Fetch 5-minute candles for structure analysis
-                                        df_risk = fetch_candle_data(smartApi, token, symbol, "FIVE_MINUTE")
+                                        df_risk = fetch_candle_data(dhan, token, symbol, "FIVE_MINUTE")
                                         
                                         if df_risk is None or df_risk.empty:
                                             logger.warning(f"❌ Skipping {symbol}: No data for risk calc")
@@ -1667,7 +1675,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                     
                                     if sizing_mode == "dynamic":
                                         # Dynamic position sizing based on account balance and SL
-                                        balance = get_account_balance(smartApi, dry_run)
+                                        balance = get_account_balance(dhan, dry_run)
                                         risk_pct = config_manager.get("position_sizing", "risk_per_trade_pct") or 1.0
                                         max_pos_pct = config_manager.get("position_sizing", "max_position_size_pct") or 20.0
                                         min_sl_pct = config_manager.get("position_sizing", "min_sl_distance_pct") or 0.6
@@ -1708,7 +1716,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                         break
                                         
                                     correlation_id = generate_correlation_id(symbol, "BUY")
-                                    orderId = place_buy_order(smartApi, symbol, token, quantity, correlation_id)
+                                    orderId = place_buy_order(dhan, symbol, token, quantity, correlation_id)
                                     
                                     if not orderId:
                                         logger.warning(f"⚠️ Buy Order Skipped (Duplicate or Failed): {symbol} | cID: {correlation_id}")
@@ -1716,13 +1724,13 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                     
                                     # Verify Order Status
                                     if orderId:
-                                        is_success, status, avg_price = verify_order_status(smartApi, orderId)
+                                        is_success, status, avg_price = verify_order_status(dhan, orderId)
                                         
                                         # --- TIMEOUT RECOVERY: LAST RESORT ---
                                         if not is_success and "TIMEOUT" in str(status):
                                             logger.warning(f"⚠️ Order Verification Timed Out for {symbol}. Checking Positions directly...")
                                             from dhan_api_helper import fetch_net_positions
-                                            live_positions = fetch_net_positions(smartApi)
+                                            live_positions = fetch_net_positions(dhan)
                                             if live_positions:
                                                 for pos in live_positions:
                                                     # Check if symbol matches and qty matches (approx)
