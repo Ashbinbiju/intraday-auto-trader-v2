@@ -1401,12 +1401,10 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                 if indices:
                     BOT_STATE["indices"] = indices
                     
-                # --- Pre-Fetch Top Sectors for UI (Even before Start Time) ---
-                strategy_mode = config_manager.get("general", "strategy_mode") or "SECTOR_MOMENTUM"
-                if strategy_mode != "MARKET_MOVER":
-                     sectors = fetch_top_performing_sectors()
-                     if sectors:
-                         BOT_STATE["top_sectors"] = sectors[:4] # Store top 4 for UI
+                # --- Pre-Fetch Top Sectors for UI (Always, regardless of strategy mode) ---
+                sectors = fetch_top_performing_sectors()
+                if sectors:
+                    BOT_STATE["top_sectors"] = sectors[:4] # Store top 4 for UI
                 
                 broadcast_state() # Update UI with indices & sectors
                 # ----------------------------------
