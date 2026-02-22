@@ -34,7 +34,7 @@ async def start_order_update_ws():
     """
     logger.info("Waiting for Dhan API Session to initialize...")
     while True:
-        if main.SMART_API_SESSION: # Check connectivity (Dhan object exists)
+        if getattr(main, 'DHAN_API_SESSION', None): # Check connectivity (Dhan object exists)
             # Get IDs from config
             client_id = config_manager.get("credentials", "dhan_client_id")
             access_token = config_manager.get("credentials", "dhan_access_token")
