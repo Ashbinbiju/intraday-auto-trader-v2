@@ -12,3 +12,4 @@ python-multipart
 aiohttp
 supabase
 dhanhq==2.1.0
+python-dotenv

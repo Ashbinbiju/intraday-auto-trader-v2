@@ -1,7 +1,10 @@
 import json
 import os
 import logging
+from dotenv import load_dotenv
 from database import get_remote_config, save_remote_config
+
+load_dotenv()
 
 CONFIG_FILE = "config.json"
 
@@ -48,6 +51,7 @@ class ConfigManager:
         if remote_config:
             self.config = self.update_nested(self.config, remote_config)
             logging.info("✅ Config Loaded from Supabase")
+            self._apply_env_overrides()
             # Sync local file
             self.save_local() 
             return
@@ -63,6 +67,23 @@ class ConfigManager:
                 logging.error(f"Error loading local config: {e}")
         else:
             self.save_config()
+            
+        self._apply_env_overrides()
+
+    def _apply_env_overrides(self):
+        """Override sensitive credentials from environment variables"""
+        dhan_client_id = os.environ.get("DHAN_CLIENT_ID")
+        dhan_access_token = os.environ.get("DHAN_ACCESS_TOKEN")
+        smart_api_api_key = os.environ.get("SMART_API_KEY")
+
+        if dhan_client_id and not dhan_client_id.startswith("${"):
+            self.config["credentials"]["dhan_client_id"] = dhan_client_id
+            
+        if dhan_access_token and not dhan_access_token.startswith("${"):
+            self.config["credentials"]["dhan_access_token"] = dhan_access_token
+            
+        if smart_api_api_key and not smart_api_api_key.startswith("${"):
+            self.config["credentials"]["smart_api_api_key"] = smart_api_api_key
 
     def update_nested(self, d, u):
         """Recursively update dictionary d with values from u."""

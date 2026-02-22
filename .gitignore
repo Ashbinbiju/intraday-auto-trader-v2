@@ -57,6 +57,7 @@ media__*.png
 bot_state.json
 smart_websocket.log
 trading_bot.log
+config.json
 
 # OS
 .DS_Store

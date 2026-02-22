@@ -8,7 +8,7 @@
         "max_trades_per_day": 2,
         "max_trades_per_stock": 3,
         "trading_start_time": "09:20",
-        "trading_end_time": "14:30",
+        "trading_end_time": "15:15",
         "square_off_time": "15:15"
     },
     "general": {
@@ -20,15 +20,15 @@
     "position_sizing": {
         "mode": "dynamic",
         "risk_per_trade_pct": 1.0,
-        "max_position_size_pct": 50,
+        "max_position_size_pct": 50.0,
         "min_sl_distance_pct": 0.6,
         "paper_trading_balance": 100000.0,
         "leverage_equity": 5
     },
     "credentials": {
-        "dhan_client_id": "1107793529",
-        "dhan_access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzcxMDA2MDM1LCJpYXQiOjE3NzA5MTk2MzUsInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTA3NzkzNTI5In0.ij_3V1QepUMrTxIGi70QH1RduGZfcydV-vMQTksWdUgoFr1Q29gfy1Mtul23kCvEtGRxzvPq8tgJ8XRyXWTC2g",
-        "smart_api_api_key": "ruseeaBq"
+        "dhan_client_id": "${DHAN_CLIENT_ID}",
+        "dhan_access_token": "${DHAN_ACCESS_TOKEN}",
+        "smart_api_api_key": "${SMART_API_KEY}"
     },
     "structure_risk": {
         "sl_buffer_pct": 0.002,
