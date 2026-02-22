@@ -1402,6 +1402,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                     BOT_STATE["indices"] = indices
                     
                 # --- Pre-Fetch Top Sectors for UI (Always, regardless of strategy mode) ---
+                strategy_mode = config_manager.get("general", "strategy_mode") or "SECTOR_MOMENTUM"
                 sectors = fetch_top_performing_sectors()
                 if sectors:
                     BOT_STATE["top_sectors"] = sectors[:4] # Store top 4 for UI
@@ -1468,14 +1469,12 @@ def run_bot_loop(async_loop=None, ws_manager=None):
 
                 else:
                     # DEFAULT: SECTOR MOMENTUM
-                    sectors = fetch_top_performing_sectors()
                     if sectors:
                          logger.info(f"DEBUG: Main Loop Scraped {len(sectors)} sectors. Top: {[s['name'] for s in sectors[:4]]}")
                     else:
                         logger.info("No sector data available. Skipping scan. 📉")
                     
                     target_sectors = sectors[:4] if sectors else []
-                    BOT_STATE["top_sectors"] = target_sectors
         
                     for sector in target_sectors:
                         stocks = fetch_stocks_in_sector(sector['key'])
