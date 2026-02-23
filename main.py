@@ -1378,7 +1378,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
     
                 # ... (Trade Guards) ...
                 trading_end_time = config_manager.get("limits", "trading_end_time")
-                trading_start_time = config_manager.get("limits", "trading_start_time") or "09:30"
+                trading_start_time = config_manager.get("limits", "trading_start_time") or "09:45"
                 max_trades_day = config_manager.get("limits", "max_trades_per_day")
                 max_trades_stock = config_manager.get("limits", "max_trades_per_stock")
                 quantity = config_manager.get("general", "quantity")
@@ -1543,12 +1543,13 @@ def run_bot_loop(async_loop=None, ws_manager=None):
     
                         # --- AUTO BUY LOGIC (Structure-Based Risk) ---
                         if message.startswith("Strong Buy"):
-                            # STRICT TIME CHECK: Do not enter new trades after trading_end_time
-                            trading_end_time = config_manager.get("limits", "trading_end_time")
+                            # STRICT TIME CHECK: Do not enter new trades outside the allowed trading window
+                            trading_start_time = config_manager.get("limits", "trading_start_time") or "09:45"
+                            trading_end_time = config_manager.get("limits", "trading_end_time") or "11:45"
                             ist_now = get_ist_now()
                             current_time_str = ist_now.strftime("%H:%M")
-                            if current_time_str >= trading_end_time:
-                                logger.info(f"⏳ Ignoring Buy Signal for {symbol}: Current time {current_time_str} is past trading end time {trading_end_time}.")
+                            if current_time_str < trading_start_time or current_time_str >= trading_end_time:
+                                logger.info(f"⏳ Ignoring Buy Signal for {symbol}: Current time {current_time_str} is outside trading window ({trading_start_time} - {trading_end_time}).")
                                 continue
 
                             current_trades = len([p for p in BOT_STATE["positions"].values() if p["status"] == "OPEN"])
