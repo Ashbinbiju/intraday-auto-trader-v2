@@ -1502,7 +1502,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                 if stocks_to_scan:
                     # Initialize Scanner with fresh SmartAPI Session Object
                     # Legacy: Pass token. New: Pass dhan object for robustness.
-                    scanner = AsyncScanner("UNUSED_TOKEN", dhan=dhan)
+                    scanner = AsyncScanner("UNUSED_TOKEN", smartApi=dhan)
                     
                     # Fetch Persistent Index Memory (High/Low Cache)
                     # This fixes the "Post-Market 0.0" data issue by remembering valid High/Low from earlier.
