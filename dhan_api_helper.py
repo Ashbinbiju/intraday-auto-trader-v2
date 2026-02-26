@@ -2,7 +2,12 @@ import logging
 import pandas as pd
 from datetime import datetime, timedelta
 import time
-from dhanhq import dhanhq, DhanContext
+from dhanhq import dhanhq
+try:
+    from dhanhq import DhanContext
+    HAS_DHAN_CONTEXT = True
+except ImportError:
+    HAS_DHAN_CONTEXT = False
 from config import config_manager
 
 logger = logging.getLogger(__name__)
@@ -49,9 +54,13 @@ def get_dhan_session():
             logger.error("❌ Dhan Client ID or Access Token missing in config.")
             return None
             
-        # v2.2.0rc1 Change: Use DhanContext
-        dhan_context = DhanContext(DHAN_CLIENT_ID, DHAN_ACCESS_TOKEN)
-        dhan = dhanhq(dhan_context)
+        if HAS_DHAN_CONTEXT:
+            # v2.2.0rc1 Change: Use DhanContext
+            dhan_context = DhanContext(DHAN_CLIENT_ID, DHAN_ACCESS_TOKEN)
+            dhan = dhanhq(dhan_context)
+        else:
+            # Older versions: Use direct init
+            dhan = dhanhq(DHAN_CLIENT_ID, DHAN_ACCESS_TOKEN)
         return dhan
 
     except Exception as e:

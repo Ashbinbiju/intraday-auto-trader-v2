@@ -1541,16 +1541,41 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                         if len(BOT_STATE['signals']) > 50: BOT_STATE['signals'] = BOT_STATE['signals'][:50]
                         broadcast_state()
     
-                        # --- AUTO BUY LOGIC (Structure-Based Risk) ---
-                        if message.startswith("Strong Buy"):
+                        # --- SNIPER ALERT REGISTRATION ---
+                        if message.startswith("SNIPER_ALERT"):
                             # STRICT TIME CHECK: Do not enter new trades outside the allowed trading window
                             trading_start_time = config_manager.get("limits", "trading_start_time") or "09:45"
                             trading_end_time = config_manager.get("limits", "trading_end_time") or "11:45"
                             ist_now = get_ist_now()
                             current_time_str = ist_now.strftime("%H:%M")
                             if current_time_str < trading_start_time or current_time_str >= trading_end_time:
-                                logger.info(f"⏳ Ignoring Buy Signal for {symbol}: Current time {current_time_str} is outside trading window ({trading_start_time} - {trading_end_time}).")
+                                logger.info(f"⏳ Ignoring Sniper Alert for {symbol}: Current time {current_time_str} is outside trading window ({trading_start_time} - {trading_end_time}).")
                                 continue
+                                
+                            current_trades = len([p for p in BOT_STATE["positions"].values() if p["status"] == "OPEN"])
+                            if current_trades < max_trades_day:
+                                # Add to Watchlist
+                                with state_lock:
+                                    if symbol not in BOT_STATE.get("sniper_watchlist", {}):
+                                        logger.info(f"🎯 Sniper Alert Registered for {symbol} at {price}. Waiting for 1M Pullback...")
+                                        
+                                        # Use signal_data['time'] if available, else current time
+                                        # To accurately track 5M candle freshness
+                                        impulse_time = pd.to_datetime(signal_data.get('time', "now")).timestamp() if 'time' in signal_data else time.time()
+                                        
+                                        if "sniper_watchlist" not in BOT_STATE:
+                                            BOT_STATE["sniper_watchlist"] = {}
+                                        BOT_STATE["sniper_watchlist"][symbol] = {
+                                            "added_at": time.time(),
+                                            "impulse_time": impulse_time,
+                                            "5m_vwap": 0.0, # Will fetch real latest later before pullback execution,
+                                            "5m_ema20": 0.0,
+                                        }
+                                        
+                                save_state(BOT_STATE)
+                                
+                        # --- AUTO BUY LOGIC (Structure-Based Risk) ---
+                        if message.startswith("Strong Buy"):
 
                             current_trades = len([p for p in BOT_STATE["positions"].values() if p["status"] == "OPEN"])
                             if current_trades < max_trades_day:
@@ -1814,6 +1839,143 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                 
                 # BROADCAST END of Cycle
                 broadcast_state()
+                
+                # --- PROCESS SNIPER WATCHLIST ---
+                from indicators import check_1m_sniper_entry
+                
+                watchlist = BOT_STATE.get("sniper_watchlist", {})
+                expired_symbols = []
+                
+                for symbol, data in list(watchlist.items()):
+                     # 1. Prune Expired (Older than 15 mins)
+                     if time.time() - data["added_at"] > 900:
+                         logger.info(f"⏳ Sniper Watchlist Timeout: Removed {symbol} (No pullback within 15min)")
+                         expired_symbols.append(symbol)
+                         continue
+                         
+                     # 2. Prevent Multiple Positions
+                     if symbol in BOT_STATE["positions"] and BOT_STATE["positions"][symbol]["status"] == "OPEN":
+                         expired_symbols.append(symbol)
+                         continue
+                         
+                     # 3. Check Trading Limits dynamically again before executing
+                     if BOT_STATE["total_trades_today"] >= max_trades_day:
+                         break
+                         
+                     token = token_map.get(symbol)
+                     if not token:
+                         continue
+                         
+                     # Re-fetch latest 5M for VWAP/EMA20 anchors
+                     df_5m = fetch_candle_data(dhan, token, symbol, "FIVE_MINUTE")
+                     if df_5m is None or len(df_5m) < 2: continue
+                     
+                     from indicators import calculate_indicators
+                     df_5m = calculate_indicators(df_5m)
+                     latest_5m = df_5m.iloc[-2]
+                     five_m_vwap = latest_5m.get('VWAP')
+                     five_m_ema20 = latest_5m.get('EMA_20')
+                     
+                     if pd.isna(five_m_vwap) or pd.isna(five_m_ema20): continue
+                     
+                     # Check 1M Pullback
+                     df_1m = fetch_candle_data(dhan, token, symbol, "ONE_MINUTE")
+                     if df_1m is not None:
+                         impulse_time = data.get('impulse_time')
+                         is_snipe, snipe_reason = check_1m_sniper_entry(df_1m, five_m_vwap, five_m_ema20, impulse_time=impulse_time)
+                         
+                         if is_snipe:
+                             logger.info(f"🔫 SNIPER EXECUTING {symbol}: {snipe_reason}")
+                             
+                             # Remove from watchlist gracefully to prevent dupe fires
+                             expired_symbols.append(symbol)
+                             
+                             # Calculate SL from 1M Swing Low
+                             # Using the lowest low of the last 5 1M completed candles
+                             recent_1m = df_1m.iloc[-6:-1]
+                             sl_price = recent_1m['low'].min()
+                             
+                             # Buffer SL by small amount
+                             buffered_sl = sl_price * 0.999
+                             
+                             # Execute Trade
+                             # Get live price, balance, and risk parameters
+                             live_ltp = fetch_ltp(dhan, token, symbol)
+                             if live_ltp is None or live_ltp == 0:
+                                  logger.warning(f"LTP missing for sniper {symbol}")
+                                  continue
+                                  
+                             if live_ltp <= buffered_sl:
+                                  logger.warning(f"Invalid Sniper SL for {symbol}. LTP: {live_ltp} SL: {buffered_sl}")
+                                  continue
+                                  
+                             try:
+                                  balance = get_account_balance(dhan, dry_run)
+                             except Exception:
+                                  balance = 100000.0  # Fallback
+                                  
+                             risk_pct = config_manager.get("position_sizing", "risk_per_trade_pct") or 1.0
+                             max_pos_pct = config_manager.get("position_sizing", "max_position_size_pct") or 20.0
+                             min_sl_pct = config_manager.get("position_sizing", "min_sl_distance_pct") or 0.5
+                             
+                             calc_qty = calculate_position_size(
+                                  entry_price=live_ltp,
+                                  sl_price=buffered_sl,
+                                  balance=balance,
+                                  risk_pct=risk_pct,
+                                  max_position_pct=max_pos_pct,
+                                  min_sl_pct=min_sl_pct,
+                                  symbol=symbol
+                             )
+                             
+                             if calc_qty > 0:
+                                  correlation_id = generate_correlation_id(symbol, "SNIPER_BUY")
+                                  order_id = place_buy_order(dhan, symbol, token, calc_qty, correlation_id=correlation_id)
+                                  
+                                  if order_id or dry_run:
+                                      target_pct = config_manager.get("risk", "target_pct") or 0.02
+                                      target_price = live_ltp * (1 + target_pct) 
+                                      
+                                      # If order placed, register position
+                                      with state_lock:
+                                           BOT_STATE["total_trades_today"] += 1
+                                           BOT_STATE["stock_trade_counts"][symbol] = BOT_STATE["stock_trade_counts"].get(symbol, 0) + 1
+                                           BOT_STATE["positions"][symbol] = {
+                                                "symbol": symbol,
+                                                "entry_price": live_ltp,
+                                                "qty": calc_qty,
+                                                "sl": buffered_sl,
+                                                "target": target_price,
+                                                "original_sl": buffered_sl,
+                                                "highest_ltp": live_ltp,
+                                                "status": "OPEN",
+                                                "entry_time": get_ist_now().strftime("%H:%M:%S"),
+                                                "entry_time_ts": time.time(),
+                                                "is_breakeven_active": False,
+                                                "setup_grade": "SNIPER",
+                                                "order_id": order_id if not dry_run else "DRY_RUN",
+                                                "exit_in_progress": False
+                                           }
+                                           save_state(BOT_STATE)
+                                           broadcast_state()
+                                      
+                                      # Record the trade log via supabase
+                                      leverage = get_leverage()      
+                                      try:
+                                          log_trade_execution(BOT_STATE["positions"][symbol], 0, "BUY", leverage)
+                                      except Exception as ex:
+                                          logger.error(f"Failed to log trade to Supabase: {ex}")
+                                      
+                                      msg = f"🟢 **SNIPER EXECUTED**\nSymbol: {symbol}\nQty: {calc_qty}\nLTP: ₹{live_ltp:.2f}\nRisk SL: ₹{buffered_sl:.2f} \nDist: {((live_ltp-buffered_sl)/live_ltp)*100:.2f}%\nStatus: {'PAPER TRADING' if dry_run else 'LIVE'}"
+                                      send_telegram_message(msg)
+
+                # Prune explicitly removed / expired watchlist items
+                if expired_symbols:
+                    with state_lock:
+                        for s in expired_symbols:
+                            if s in BOT_STATE.get("sniper_watchlist", {}):
+                                del BOT_STATE["sniper_watchlist"][s]
+                        save_state(BOT_STATE)
                 
                 # Dynamic Interval: Market Movers need faster updates
                 effective_interval = config_manager.get("general", "check_interval") or 300

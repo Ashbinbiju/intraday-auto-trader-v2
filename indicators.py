@@ -152,15 +152,114 @@ def check_buy_condition(df, current_price=None, extension_limit=1.5):
         reasons.append(f"Huge Candle ({candle_range_pct:.2f}% > Limit {max_candle_range}%)")
 
     if not reasons:
-        # Late Entry Protection (Guard)
+        # 5M Impulse Extension/Delay Filter
         ema_dist = ((price - ema_20) / ema_20) * 100
         if ema_dist > extension_limit:
              return False, f"Late Entry Guard: Price is {ema_dist:.2f}% > EMA20 (Max {extension_limit}%)"
+             
+        # Only return SNIPER_ALERT instead of Strong Buy based on the stricter logic requirements
+        # Additional Impulse Check: Must close above previous candle high
+        prev_high = df.iloc[-3]['high'] if len(df) >= 3 else 0.0
+        if close_price <= prev_high:
+             return False, "Not an Impulse: Close <= Previous High"
+             
+        # Additional Impulse Check: Candle body > 60% of total range
+        body_size = abs(close_price - open_price)
+        total_range = last_row['high'] - last_row['low']
+        if total_range > 0 and (body_size / total_range) <= 0.60:
+             return False, f"Weak Body: Body is {(body_size / total_range)*100:.0f}% of range (Needs > 60%)"
 
-        return True, f"Strong Buy: Price > VWAP/EMA20 + Vol Spike ({int(closed_vol)}) + Green Candle"
+        return True, f"SNIPER_ALERT: 5M Impulse Detected (Price > VWAP/EMA20 + Vol Spike + Close > Prev High)"
     
     return False, f"Skipped: {', '.join(reasons)}"
 
+
+def check_1m_sniper_entry(df_1m, five_min_vwap, five_min_ema20, impulse_time=None):
+    """
+    Evaluates the 1M pullback entry criteria.
+    Args:
+        df_1m (pd.DataFrame): 1-minute candle dataframe.
+        five_min_vwap (float): VWAP from the 5M chart.
+        five_min_ema20 (float): EMA20 from the 5M chart.
+        impulse_time (float): Optional timestamp of when the 5M impulse fired.
+    Returns:
+        (bool, str): (True if entry triggered, Reason)
+    """
+    if df_1m is None or len(df_1m) < 4:
+         return False, "Insufficient 1M data"
+         
+    # 1M Pullback Logic evaluates the latest completed 1M candle (iloc[-2]) and history
+    current_1m = df_1m.iloc[-2]
+    prev_1m = df_1m.iloc[-3]
+    
+    close_price = current_1m['close']
+    open_price = current_1m['open']
+    prev_high = prev_1m['high']
+    
+    # Rule 0: Impulse Freshness Filter
+    # Prevent late entries: Do not allow sniper entry if impulse occurred more than 5 1M candles ago
+    if impulse_time:
+        import time
+        # Get the time of the current 1M candle being evaluated.
+        # Fallback to current system time if parsing fails.
+        try:
+             # df_1m['datetime'] is often a string or datetime obj.
+             current_candle_time = pd.to_datetime(current_1m['datetime']).timestamp()
+        except Exception:
+             current_candle_time = time.time()
+             
+        minutes_passed = (current_candle_time - impulse_time) / 60.0
+        if minutes_passed > 5.0:
+             return False, f"Freshness Failure: Impulse occurred {minutes_passed:.1f} minutes ago (Max 5 candles)."
+             
+    # Rule 1: Pullback - Price retraces to within <= 0.4% of 5M EMA20 OR <= 0.3% of 5M VWAP
+    dist_ema20 = abs(close_price - five_min_ema20) / five_min_ema20 * 100
+    dist_vwap = abs(close_price - five_min_vwap) / five_min_vwap * 100
+    
+    if dist_ema20 > 0.4 and dist_vwap > 0.3:
+        return False, f"No Pullback: Distance to 5M EMA20 ({dist_ema20:.2f}%) and 5M VWAP ({dist_vwap:.2f}%) too high."
+        
+    # Rule 2: Buyer confirmation - Current 1M candle is Green AND closes above previous 1M High
+    if close_price <= open_price:
+        return False, "No Confirmation: 1M Candle is Red (Close <= Open)."
+        
+    if close_price <= prev_high:
+        return False, "No Confirmation: 1M Close <= Previous 1M High."
+        
+    # Rule 3: Micro structure - Last 3 1M candles (excluding the forming one at iloc[-1])
+    # To check if at least 2 of the last 3 formed higher highs
+    # Specifically handling iloc[-4], iloc[-3], iloc[-2]
+    h1 = df_1m.iloc[-4]['high']
+    h2 = df_1m.iloc[-3]['high']
+    h3 = df_1m.iloc[-2]['high']
+    
+    higher_highs = 0
+    if h2 > h1: higher_highs += 1
+    if h3 > h2: higher_highs += 1
+    
+    if higher_highs < 1:   # If we need "at least 2 higher highs in last 3", it technically requires h3>h2 and h2>h1 OR history needs expansion.
+        # Wait, if we check h1, h2, h3. There are only two transitions: h1->h2, h2->h3.
+        # So "2 must form higher highs" means BOTH transitions must be true.
+        # Let's adjust slightly: If the sequence of the 3 candles' highs has two positive increases.
+        pass # Actually, the rule "At least 2 must form higher highs" for 3 candles means we need to look at 4 candles to get 3 highs, etc.
+        
+    # Let's be precise: "Last 3 1M candles: At least 2 must form higher highs or higher lows."
+    # We will check the last 3 completed candles against their immediate previous candles to allow HL -> HL -> Breakout.
+    c1, c2, c3 = df_1m.iloc[-4], df_1m.iloc[-3], df_1m.iloc[-2]
+    c0 = df_1m.iloc[-5] if len(df_1m) >=5 else None
+    
+    def is_bullish_struct(curr, prev):
+        return curr['high'] > prev['high'] or curr['low'] > prev['low']
+        
+    bullish_count = 0
+    if c0 is not None and is_bullish_struct(c1, c0): bullish_count += 1
+    if is_bullish_struct(c2, c1): bullish_count += 1
+    if is_bullish_struct(c3, c2): bullish_count += 1
+    
+    if bullish_count < 2:
+        return False, f"Micro Structure Failure: Only {bullish_count} bullish structure candles in last 3 (Need >= 2)."
+        
+    return True, "Sniper Entry Triggered: Pullback Confirmed + Bullish Micro Structure"
 
 def check_15m_bias(df):
     """Checks 15-minute timeframe for trend bias/direction."""

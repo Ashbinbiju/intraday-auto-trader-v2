@@ -28,7 +28,8 @@ def load_state():
         "total_trades_today": 0,
         "stock_trade_counts": {},
         "total_pnl": 0.0,
-        "last_reset_date": "" # Track the last reset date
+        "last_reset_date": "", # Track the last reset date
+        "sniper_watchlist": {}
     }
     
     # Try loading from Supabase first
@@ -117,6 +118,7 @@ def check_and_reset_daily_signals(state):
             state["total_trades_today"] = 0
             state["stock_trade_counts"] = {}
             state["signals"] = [] # Clear daily signals
+            state["sniper_watchlist"] = {} # Clear watchlist
             state["reconciliation_done_today"] = False # Reset reconciliation flag
             
             # 2. Clear CLOSED positions from previous days
