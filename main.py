@@ -244,8 +244,7 @@ def place_buy_order(dhan, symbol, token, qty, correlation_id=None):
         return orderId
     except Exception as e:
         logger.error(f"Order Placement Failed for {symbol}: {e} | cID: {correlation_id}")
-        # Only clear on true failure (order not placed at all)
-        clear_pending_order(correlation_id)
+        # Lock is cleared by the calling loop on failure if it returns None
         return None
 
 # Shared State for API
@@ -1434,7 +1433,10 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                            }
                                            save_state(BOT_STATE)
                                            broadcast_state()
-                                      
+                                           
+                                           from main import clear_pending_order
+                                           clear_pending_order(correlation_id)
+                                           
                                       leverage = get_leverage()      
                                       try:
                                           log_trade_execution(BOT_STATE["positions"][symbol], 0, "BUY", leverage)
@@ -1443,6 +1445,10 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                       
                                       msg = f"🟢 **SNIPER EXECUTED**\nSymbol: {symbol}\nQty: {calc_qty}\nLTP: ₹{live_ltp:.2f}\nRisk SL: ₹{buffered_sl:.2f} \nDist: {((live_ltp-buffered_sl)/live_ltp)*100:.2f}%\nStatus: {'PAPER TRADING' if dry_run else 'LIVE'}"
                                       send_telegram_message(msg)
+                                  else:
+                                      # Order failed to place, clear lock
+                                      from main import clear_pending_order
+                                      clear_pending_order(correlation_id)
 
                 # Prune explicitly removed / expired watchlist items
                 if expired_symbols:
