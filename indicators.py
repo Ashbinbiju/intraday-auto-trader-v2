@@ -169,7 +169,7 @@ def check_buy_condition(df, current_price=None, extension_limit=1.5):
         if total_range > 0 and (body_size / total_range) <= 0.60:
              return False, f"Weak Body: Body is {(body_size / total_range)*100:.0f}% of range (Needs > 60%)"
 
-        return True, f"SNIPER_ALERT: 5M Impulse Detected (Price > VWAP/EMA20 + Vol Spike + Close > Prev High)"
+        return True, f"SNIPER_ALERT: 5M Impulse Detected (Price > VWAP/EMA20 + Vol Spike + Close > Prev High) | Vol: {current_vol}"
     
     return False, f"Skipped: {', '.join(reasons)}"
 
@@ -182,6 +182,8 @@ def check_1m_sniper_entry(df_1m, five_min_vwap, five_min_ema20, impulse_time=Non
         five_min_vwap (float): VWAP from the 5M chart.
         five_min_ema20 (float): EMA20 from the 5M chart.
         impulse_time (float): Optional timestamp of when the 5M impulse fired.
+        impulse_vol (float): Optional volume of the 5M impulse candle.
+        nifty_1m_state (dict): Optional dict with 'close' and 'ema20' keys for Nifty 50.
     Returns:
         (bool, str): (True if entry triggered, Reason)
     """
@@ -196,8 +198,8 @@ def check_1m_sniper_entry(df_1m, five_min_vwap, five_min_ema20, impulse_time=Non
     open_price = current_1m['open']
     prev_high = prev_1m['high']
     
-    # Rule 0: Impulse Freshness Filter
-    # Prevent late entries: Do not allow sniper entry if impulse occurred more than 5 1M candles ago
+    # Rule 0: Impulse Freshness Filter (Momentum Filter 4 - STRICTER)
+    # Prevent late entries: Momentum decays fast. Hard failure > 240 seconds (4 minutes)
     if impulse_time:
         import time
         # Get the time of the current 1M candle being evaluated.
@@ -208,9 +210,44 @@ def check_1m_sniper_entry(df_1m, five_min_vwap, five_min_ema20, impulse_time=Non
         except Exception:
              current_candle_time = time.time()
              
-        minutes_passed = (current_candle_time - impulse_time) / 60.0
-        if minutes_passed > 5.0:
-             return False, f"Freshness Failure: Impulse occurred {minutes_passed:.1f} minutes ago (Max 5 candles)."
+        age_seconds = current_candle_time - impulse_time
+        if age_seconds > 240:
+             return False, f"Freshness Failure: Impulse expired ({int(age_seconds)}s ago. Max 240s)."
+             
+    # --- MOMENTUM CONTINUATION FILTERS ---
+    
+    # Momentum Filter 1: Volume Contraction During Pullback
+    # Impulse must have high volume, pullbacks must have low volume.
+    if impulse_vol and impulse_vol > 0:
+        pullback_vol = df_1m.tail(3)["volume"].mean()
+        if pullback_vol > (impulse_vol * 0.6):
+            return False, f"Momentum Cooling: Pullback Vol ({pullback_vol:.0f}) > 60% of Impulse Vol ({impulse_vol:.0f}). Sellers active."
+
+    # Momentum Filter 2: VWAP Cushion
+    # Price must not be hugging the VWAP boundary at the time of entry.
+    vwap_distance = abs(close_price - five_min_vwap) / five_min_vwap * 100
+    if vwap_distance < 0.25:
+        return False, f"Too Close To VWAP: Distance {vwap_distance:.2f}% < 0.25%. Exhaustion risk."
+
+    # Momentum Filter 3: Momentum Acceleration
+    # Check if the candle energy (range) is accelerating or dying.
+    recent_range = current_1m["high"] - current_1m["low"]
+    
+    # Avoid div by zero or negative indexing issues
+    if len(df_1m) >= 7:
+        avg_range = (df_1m.iloc[-7:-2]["high"] - df_1m.iloc[-7:-2]["low"]).mean()
+        if avg_range > 0 and recent_range < (avg_range * 0.8):
+            return False, f"Momentum Weakening: Recent candle range ({recent_range:.2f}) < 80% of avg ({avg_range:.2f})."
+
+    # Momentum Filter 5: Market Participation Check
+    # If Nifty is falling under its 1M EMA20, the market momentum is dying. Stocks will follow.
+    if nifty_1m_state:
+        nifty_close = nifty_1m_state.get('close', 0)
+        nifty_ema20 = nifty_1m_state.get('ema20', 0)
+        if nifty_close > 0 and nifty_ema20 > 0 and nifty_close < nifty_ema20:
+            return False, "Market Momentum Weak: NIFTY 1M Close < EMA20."
+
+    # --- STRUCTURAL PULLBACK RULES ---
              
     # Rule 1: Pullback - Price retraces to within <= 0.4% of 5M EMA20 OR <= 0.3% of 5M VWAP
     dist_ema20 = abs(close_price - five_min_ema20) / five_min_ema20 * 100

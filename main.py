@@ -1383,7 +1383,17 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                      df_1m = fetch_candle_data(api_session, token, symbol, "ONE_MINUTE")
                      if df_1m is not None:
                          impulse_time = data.get('impulse_time')
-                         is_snipe, snipe_reason = check_1m_sniper_entry(df_1m, five_m_vwap, five_m_ema20, impulse_time=impulse_time)
+                         impulse_vol = data.get('impulse_vol', 0)
+                         nifty_1m_state = BOT_STATE.get("nifty_1m")
+                         
+                         is_snipe, snipe_reason = check_1m_sniper_entry(
+                             df_1m, 
+                             five_m_vwap, 
+                             five_m_ema20, 
+                             impulse_time=impulse_time,
+                             impulse_vol=impulse_vol,
+                             nifty_1m_state=nifty_1m_state
+                         )
                          
                          if is_snipe:
                              logger.info(f"🔫 SNIPER EXECUTING {symbol}: {snipe_reason}")
@@ -1597,8 +1607,31 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                 if not BOT_STATE["is_trading_allowed"]:
                     time.sleep(10)
                     continue
-    
+                    
                 # --- Fetch Market Indices (New) ---
+                # 1. Fetch NIFTY 50 1M Data for Sniper Market Participation Filter
+                try:
+                    # Token for Nifty 50 is typically "99926000" on NSE 
+                    nifty_token = "26000" if "Nifty 50" not in token_map else token_map["Nifty 50"]
+                    # If token_map doesn't have it explicitly mapped by that name, Dhan usually uses '26000' or '99926000' for NIFTY.
+                    # Fallback to direct symbol token.
+                    nifty_df = fetch_candle_data(dhan, nifty_token, "NIFTY 50", "ONE_MINUTE")
+                    if nifty_df is not None and len(nifty_df) > 20:
+                        from indicators import calculate_indicators
+                        nifty_df = calculate_indicators(nifty_df)
+                        latest_nifty = nifty_df.iloc[-1]
+                        
+                        BOT_STATE["nifty_1m"] = {
+                            "close": latest_nifty.get('close', 0),
+                            "ema20": latest_nifty.get('EMA_20', 0),
+                            "timestamp": time.time()
+                        }
+                    else:
+                        logger.warning("Failed to fetch/calculate NIFTY 50 1M for market participation filter.")
+                except Exception as e_nifty:
+                    logger.error(f"Error fetching NIFTY 1M data: {e_nifty}")
+    
+                # 2. Fetch General Indices for UI
                 indices = fetch_market_indices()
                 if indices:
                     BOT_STATE["indices"] = indices
@@ -1765,11 +1798,20 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                         # To accurately track 5M candle freshness
                                         impulse_time = pd.to_datetime(signal_data.get('time', "now")).timestamp() if 'time' in signal_data else time.time()
                                         
+                                        # Extract Volume from message if present (Format: "... | Vol: 12345")
+                                        impulse_vol = 0
+                                        if "| Vol:" in message:
+                                            try:
+                                                impulse_vol = float(message.split("| Vol:")[1].strip())
+                                            except Exception:
+                                                pass
+                                        
                                         if "sniper_watchlist" not in BOT_STATE:
                                             BOT_STATE["sniper_watchlist"] = {}
                                         BOT_STATE["sniper_watchlist"][symbol] = {
                                             "added_at": time.time(),
                                             "impulse_time": impulse_time,
+                                            "impulse_vol": impulse_vol,
                                             "5m_vwap": 0.0, # Will fetch real latest later before pullback execution,
                                             "5m_ema20": 0.0,
                                         }
