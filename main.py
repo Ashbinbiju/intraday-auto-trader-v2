@@ -99,6 +99,18 @@ def is_duplicate_order(correlation_id):
     with state_lock:
         return correlation_id in BOT_STATE.get('pending_orders', {})
 
+def is_order_inflight(symbol):
+    """
+    Checks if ANY order is currently pending execution for this symbol.
+    Prevents the fast loop from double-firing on same setup.
+    """
+    with state_lock:
+        pending = BOT_STATE.get('pending_orders', {})
+        for cid, data in pending.items():
+            if data.get('symbol') == symbol:
+                return True
+        return False
+
 def register_pending_order(correlation_id, order_data):
     """
     Registers order as pending to prevent duplicates.
@@ -1325,8 +1337,8 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                          
                      # 4. Idempotency Check (Prevent duplicate orders on aggressive loop)
                      correlation_id = generate_correlation_id(symbol, "SNIPER_BUY")
-                     from main import is_duplicate_order # Import safely to use global pending structures
-                     if is_duplicate_order(correlation_id):
+                     from main import is_order_inflight # Check pending by symbol
+                     if is_order_inflight(symbol):
                          logger.warning(f"⏩ Skipping {symbol} Snipe: Order already pending execution.")
                          expired_symbols.append(symbol) # Clear it since an order is already flying
                          continue
