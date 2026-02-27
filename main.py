@@ -158,8 +158,7 @@ def check_and_register_pending_order(correlation_id, order_data):
 def cleanup_pending_orders(dhan):
     """
     Periodic cleanup: removes orders in final states from pending list.
-    Prevents memory bloat from stale pending orders.
-    Final states: FILLED, REJECTED, CANCELLED, EXPIRED
+    Prevents memory bloat from stale pending orders and zombie locks.
     Thread-safe cleanup.
     """
     try:
@@ -172,24 +171,39 @@ def cleanup_pending_orders(dhan):
         
         from dhan_api_helper import get_order_status
         
+        current_time = time.time()
         for correlation_id, data in pending.items():
             order_id = data.get('order_id')
-            if not order_id:
-                # No order_id means placement failed, safe to remove
-                clear_pending_order(correlation_id)
-                continue
+            age_seconds = current_time - data.get('timestamp', current_time)
             
-            try:
-                # Check if order is in final state
-                status = get_order_status(dhan, order_id)
-                if status in ["FILLED", "TRADED", "REJECTED", "CANCELLED", "EXPIRED"]:
-                    logger.info(f"Cleanup: Removing finalized order {correlation_id} (Status: {status})")
-                    clear_pending_order(correlation_id)
-            except Exception as e:
-                # If we can't check status after 10 minutes, assume it's stale
-                age_seconds = time.time() - data.get('timestamp', time.time())
-                if age_seconds > 600:  # 10 minutes
-                    logger.warning(f"Cleanup: Removing stale pending order {correlation_id} (Age: {int(age_seconds)}s)")
+            # Watchdog: If order lock is older than 90 seconds
+            if age_seconds > 90:
+                symbol = data.get('symbol', 'UNKNOWN')
+                logger.warning(f"🚨 Watchdog: Zombie lock detected for {symbol} (Age: {int(age_seconds)}s). Re-querying Broker...")
+                
+                if order_id:
+                    try:
+                        status = get_order_status(dhan, order_id)
+                        
+                        if status in ["FILLED", "TRADED"]:
+                            logger.info(f"✅ Watchdog: Order {order_id} was successfully filled. Lock can be natively dropped if positions reconcile.")
+                            clear_pending_order(correlation_id)
+                        elif status in ["REJECTED", "CANCELLED", "EXPIRED"]:
+                            logger.info(f"❌ Watchdog: Order {order_id} failed ({status}). Unlocking {symbol}.")
+                            clear_pending_order(correlation_id)
+                        else:
+                            # Might still be OPEN/PENDING at broker, leave lock alone but log
+                            logger.info(f"⏳ Watchdog: Order {order_id} still pending at broker ({status}). Leaving lock.")
+                    except Exception as e:
+                        logger.error(f"Watchdog: Broker query failed for zombie order {order_id}: {e}")
+                        # Keep it locked if we can't verify, or maybe force clear if extremely old?
+                        if age_seconds > 600:
+                             logger.critical(f"👽 Watchdog: Order {order_id} extremely old (>10m) and broker unresponsive. Force clearing lock.")
+                             clear_pending_order(correlation_id)
+                else:
+                    # No order_id exists, meaning place_buy_order completely crashed before assigning one.
+                    # It's a true zombie lock. We MUST unlock the symbol.
+                    logger.critical(f"🧟 Watchdog: Zombie lock {correlation_id} for {symbol} has no Order ID! Force unlocking.")
                     clear_pending_order(correlation_id)
                     
     except Exception as e:
