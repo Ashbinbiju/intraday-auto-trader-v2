@@ -1611,9 +1611,9 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                 # --- Fetch Market Indices (New) ---
                 # 1. Fetch NIFTY 50 1M Data for Sniper Market Participation Filter
                 try:
-                    # Token for Nifty 50 is typically "99926000" on NSE 
-                    nifty_token = "26000" if "Nifty 50" not in token_map else token_map["Nifty 50"]
-                    # If token_map doesn't have it explicitly mapped by that name, Dhan usually uses '26000' or '99926000' for NIFTY.
+                    # Token for Nifty 50 Index on Dhan is "13"
+                    nifty_token = "13" if "Nifty 50" not in token_map else token_map["Nifty 50"]
+                    # If token_map doesn't have it explicitly mapped by that name, '13' is the known IDX_I token.
                     # Fallback to direct symbol token.
                     nifty_df = fetch_candle_data(dhan, nifty_token, "NIFTY 50", "ONE_MINUTE")
                     if nifty_df is not None and len(nifty_df) > 20:
