@@ -1323,6 +1323,14 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                      if BOT_STATE.get("total_trades_today", 0) >= max_trades_day:
                          break
                          
+                     # 4. Idempotency Check (Prevent duplicate orders on aggressive loop)
+                     correlation_id = generate_correlation_id(symbol, "SNIPER_BUY")
+                     from main import is_duplicate_order # Import safely to use global pending structures
+                     if is_duplicate_order(correlation_id):
+                         logger.warning(f"⏩ Skipping {symbol} Snipe: Order already pending execution.")
+                         expired_symbols.append(symbol) # Clear it since an order is already flying
+                         continue
+                         
                      token = t_map.get(symbol)
                      if not token:
                          continue
@@ -1381,7 +1389,12 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                              )
                              
                              if calc_qty > 0:
-                                  correlation_id = generate_correlation_id(symbol, "SNIPER_BUY")
+                                  from main import check_and_register_pending_order
+                                  
+                                  if not check_and_register_pending_order(correlation_id, {"symbol": symbol, "type": "BUY"}):
+                                      logger.warning(f"⏩ {symbol}: Blocked by concurrency/pending order check.")
+                                      continue
+                                      
                                   order_id = place_buy_order(api_session, symbol, token, calc_qty, correlation_id=correlation_id)
                                   
                                   if order_id or dry_run:
