@@ -181,13 +181,27 @@ def fetch_candle_data(dhan, token, symbol, interval="FIFTEEN_MINUTE", days=5):
         # Rate Limit (Data API: 5/s)
         data_limiter.wait()
             
-        data = dhan.intraday_minute_data(
-            security_id=str(token),
-            exchange_segment=dhanhq.NSE,
-            instrument_type='EQUITY',
-            from_date=from_date,
-            to_date=to_date
-        )
+        # Check if Index
+        is_index = ('NIFTY' in symbol.upper() or 'BANK' in symbol.upper() or 'SENSEX' in symbol.upper())
+        exch_segment = "IDX_I" if is_index else getattr(dhanhq, 'NSE', 'NSE_EQ')
+        instr_type = "INDEX" if is_index else "EQUITY"
+            
+        try:
+            # DhanHQ 1.3 intraday_minute_data does not take from_date
+            data = dhan.intraday_minute_data(
+                security_id=str(token),
+                exchange_segment=exch_segment,
+                instrument_type=instr_type
+            )
+        except TypeError:
+            # Fallback if library signature differs
+            data = dhan.intraday_minute_data(
+                security_id=str(token),
+                exchange_segment=exch_segment,
+                instrument_type=instr_type,
+                from_date=from_date,
+                to_date=to_date
+            )
         # Note: Library `intraday_minute_data` usually implies 1-min?
         # If library doesn't expose 'interval' param, we get 1-min and resample.
         # Let's check if we can pass valid interval.
