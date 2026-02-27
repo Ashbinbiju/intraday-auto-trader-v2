@@ -1324,7 +1324,15 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                 if not is_open:
                     time.sleep(60)
                     continue
+                    
+                # Check Trading Limits
+                trading_end_time = config_manager.get("limits", "trading_end_time")
+                trading_start_time = config_manager.get("limits", "trading_start_time") or "09:45"
+                current_time = get_ist_now().strftime("%H:%M")
                 
+                if current_time < trading_start_time or current_time >= trading_end_time:
+                    time.sleep(60)
+                    continue
                 from indicators import check_1m_sniper_entry, calculate_indicators
                 
                 watchlist = BOT_STATE.get("sniper_watchlist", {})
