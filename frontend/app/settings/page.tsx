@@ -9,11 +9,11 @@ export default function SettingsPage() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
 
-    const [config, setConfig] = useState({
+    const [config, setConfig] = useState<any>({
         risk: { stop_loss_pct: 0.01, target_pct: 0.02, trail_be_trigger: 0.012 },
         position_sizing: { mode: 'dynamic', risk_per_trade_pct: 1.0, max_position_size_pct: 20.0, min_sl_distance_pct: 0.6, paper_trading_balance: 100000 },
         limits: { max_trades_per_day: 3, max_trades_per_stock: 2, trading_end_time: "14:45", trading_start_time: "09:30" },
-        general: { quantity: 1, check_interval: 300, dry_run: true, strategy_mode: "SECTOR_MOMENTUM" },
+        general: { quantity: 1, check_interval: 300, dry_run: true },
         credentials: { dhan_client_id: "", dhan_access_token: "" }
     });
 
@@ -27,7 +27,7 @@ export default function SettingsPage() {
     }, []);
 
     const handleChange = (section: string, key: string, value: any) => {
-        setConfig(prev => ({
+        setConfig((prev: any) => ({
             ...prev,
             [section]: {
                 ...prev[section as keyof typeof prev],
@@ -63,8 +63,7 @@ export default function SettingsPage() {
                 general: {
                     quantity: parseInt(config.general.quantity as any) || 1,
                     check_interval: parseInt(config.general.check_interval as any) || 300,
-                    dry_run: config.general.dry_run,
-                    strategy_mode: config.general.strategy_mode || "SECTOR_MOMENTUM"
+                    dry_run: config.general.dry_run
                 },
                 credentials: {
                     dhan_client_id: config.credentials?.dhan_client_id || "",
@@ -181,23 +180,16 @@ export default function SettingsPage() {
                                 </button>
                             </div>
 
-                            {/* Strategy Mode Selection */}
+                            {/* Strategy Mode */}
                             <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-4">
                                 <label className="block text-xs font-bold text-purple-400 mb-2 uppercase tracking-wider">
                                     Strategy Mode
                                 </label>
-                                <select
-                                    value={config.general.strategy_mode || "SECTOR_MOMENTUM"}
-                                    onChange={(e) => handleChange('general', 'strategy_mode', e.target.value)}
-                                    className="w-full bg-black/40 border border-white/10 rounded-lg p-3 text-purple-300 focus:border-purple-500 outline-none transition-all"
-                                >
-                                    <option value="SECTOR_MOMENTUM">Sector Momentum (Top Sectors)</option>
-                                    <option value="MARKET_MOVER">Market Movers (Top Gainers)</option>
-                                </select>
+                                <div className="w-full bg-black/40 border border-white/10 rounded-lg p-3 text-purple-300 font-bold">
+                                    Sector Momentum
+                                </div>
                                 <p className="text-[10px] text-gray-500 mt-2">
-                                    {config.general.strategy_mode === 'MARKET_MOVER'
-                                        ? "Scans 'Total Market Gainers' from BrkPoint API."
-                                        : "Scans top performing sectors and their constituents."}
+                                    Scans top performing sectors and their constituents.
                                 </p>
                             </div>
                         </div>
@@ -301,10 +293,10 @@ export default function SettingsPage() {
                         </div>
                     </div>
                 </div>
-            </div >
+            </div>
 
             {/* Position Sizing - Full Width */}
-            < div className="bg-gradient-to-br from-green-500/10 to-blue-500/10 border border-green-500/30 rounded-xl p-6" >
+            <div className="bg-gradient-to-br from-green-500/10 to-blue-500/10 border border-green-500/30 rounded-xl p-6">
                 <h3 className="text-xl font-bold mb-4 text-green-400 flex items-center gap-2">
                     💰 Position Sizing
                     <span className="text-xs bg-green-500/20 text-green-300 px-2 py-1 rounded">NEW</span>
@@ -421,8 +413,8 @@ export default function SettingsPage() {
                         </div>
                     )
                 }
-            </div >
+            </div>
 
-        </div >
+        </div>
     );
 }

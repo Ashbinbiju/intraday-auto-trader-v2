@@ -48,322 +48,35 @@ def calculate_indicators(df):
     return df
 
 
-def check_buy_condition(df, current_price=None, extension_limit=1.5):
+def check_buy_condition(df, current_price=None):
     """
-    Checks the Buy condition on the latest closed candle or live price.
-    Condition: Price > VWAP AND Price > EMA 20 AND Green Candle AND Volume > 1.5x Avg
-    extension_limit: Max allowed % distance from EMA 20 (dynamic).
+    Simple entry condition: Price > VWAP AND Price > EMA 20.
+    Uses the last confirmed candle (iloc[-2]) to avoid repainting.
+    Returns: (bool, str)
     """
     if df is None or df.empty:
         return False, "No Data"
 
-    # Get latest completed candle (Avoid Repainting by using iloc[-2])
-    # iloc[-1] is usually the forming candle in live data.
     if len(df) < 2:
         return False, "Not enough data"
         
     last_row = df.iloc[-2]
     
-    # Extract Indicators (Strictly from Confirmed Candle)
     ema_20 = last_row.get('EMA_20')
     vwap = last_row.get('VWAP')
-    vol_sma = last_row.get('Volume_SMA_20')
-    closed_vol = last_row.get('volume') # From iloc[-2] (Completed Candle)
-    open_price = last_row.get('open')
     close_price = last_row.get('close')
-    datetime_str = str(last_row.get('datetime', 'Unknown'))
     
-    # User Request: Price checks must match the candle exactly.
-    # We IGNORE current_price for the Logic Check.
-    price = close_price 
-    
-    # Debug/Sanity Check for User
-    # logger.info(f"Checking Signal on Candle: {datetime_str} | Close: {price} | EMA: {ema_20} | VWAP: {vwap}")
-    
-    if pd.isna(ema_20) or pd.isna(vwap) or pd.isna(vol_sma):
+    if pd.isna(ema_20) or pd.isna(vwap):
         return False, "Not enough data for indicators"
     
-    reasons = []
-
-    # 1. Trend Conditions
-    if price <= vwap:
-        reasons.append(f"Price below VWAP")
-    if price <= ema_20:
-        reasons.append(f"Price below EMA20")
-
-    # 1.1 Extension Filter (Don't chase if too far from EMA20)
-    if ema_20 > 0:
-        extension_pct = (price - ema_20) / ema_20 * 100
-        if extension_pct > extension_limit:
-            reasons.append(f"Overextended ({extension_pct:.2f}% > Limit {extension_limit}%)")
-
-    # 2. Candle Color (Green)
-    if price <= open_price:
-         reasons.append("Red Candle (Price <= Open)")
-    else:
-         # 2.1 Wick Rejection Filter (Only on Green Candles)
-         # Reject if Upper Wick > 40% of Total Range (Shooting Star / Rejection)
-         # Refinement: Consider Volume Context
-         high = last_row['high']
-         low = last_row['low']
-         upper_wick = high - close_price # For Green, Close is Max (safe)
-         total_range = high - low
-         
-         if total_range == 0:
-             reasons.append("Flat Candle (High = Low)")
-         else:
-             wick_pct = upper_wick / total_range
-             candle_range_pct = (total_range / last_row['open']) * 100
-             
-             # Skip Wick Filter if candle is tiny (< 0.15% - Noise)
-             if candle_range_pct >= 0.15:
-                 # Pre-calculate Vol Ratio for Context
-                 current_vol = last_row.get('volume', 0)
-                 avg_vol = vol_sma if vol_sma > 0 else 1
-                 vol_ratio = current_vol / avg_vol
-                 
-                 # Hard Rejection: Wick > 50% involved (Ugly Candle)
-                 if wick_pct > 0.50:
-                     reasons.append(f"Huge Wick Rejection ({wick_pct:.0%} > 50%) | Candle Size: {candle_range_pct:.2f}% | Vol: {vol_ratio:.1f}x")
-                 
-                 # Context Rejection: Wick > 35% AND High Volume (> 1.2x Avg) -> Selling Pressure
-                 elif wick_pct > 0.35:
-                     if vol_ratio > 1.2:
-                          reasons.append(f"Wick Rejection: Wick {wick_pct:.0%} | Vol {vol_ratio:.1f}x | Candle Size {candle_range_pct:.2f}% (Seller Pressure)")
-
-    # 3. Volume Confirmation (Adaptive Mechanism)
-    # If in Trend Mode (ExtLimit >= 2.0), relax Vol to 1.2x.
-    # Otherwise (Safety Mode), keep strict 1.5x.
-    vol_multiplier = 1.2 if extension_limit >= 1.9 else 1.5
+    if close_price <= vwap:
+        return False, f"Price below VWAP ({close_price:.2f} <= {vwap:.2f})"
     
-    if closed_vol < (vol_sma * vol_multiplier):
-        reasons.append(f"Low Volume ({closed_vol} < {vol_multiplier}x Avg {int(vol_sma)})")
+    if close_price <= ema_20:
+        return False, f"Price below EMA20 ({close_price:.2f} <= {ema_20:.2f})"
+    
+    return True, f"Strong Buy: Price {close_price:.2f} > VWAP {vwap:.2f} & EMA20 {ema_20:.2f}"
 
-    # 4. Volatility Guard (Huge Candle Protection)
-    # Reject if candle range is too big (Slippage/Exhaustion risk)
-    # Safety Mode: Max 1.0% | Trend Mode: Max 1.5%
-    max_candle_range = 1.5 if extension_limit >= 1.9 else 1.0
-    
-    # Use pre-calculated candle_range_pct if available, else calc
-    if 'candle_range_pct' not in locals():
-        candle_range_pct = ((last_row['high'] - last_row['low']) / last_row['open']) * 100
-        
-    if candle_range_pct > max_candle_range:
-        reasons.append(f"Huge Candle ({candle_range_pct:.2f}% > Limit {max_candle_range}%)")
-
-    if not reasons:
-        # 5M Impulse Extension/Delay Filter
-        ema_dist = ((price - ema_20) / ema_20) * 100
-        if ema_dist > extension_limit:
-             return False, f"Late Entry Guard: Price is {ema_dist:.2f}% > EMA20 (Max {extension_limit}%)"
-             
-        # Only return SNIPER_ALERT instead of Strong Buy based on the stricter logic requirements
-        # Additional Impulse Check: Must close above previous candle high
-        prev_high = df.iloc[-3]['high'] if len(df) >= 3 else 0.0
-        if close_price <= prev_high:
-             return False, "Not an Impulse: Close <= Previous High"
-             
-        # Additional Impulse Check: Candle body > 60% of total range
-        body_size = abs(close_price - open_price)
-        total_range = last_row['high'] - last_row['low']
-        if total_range > 0 and (body_size / total_range) <= 0.60:
-             return False, f"Weak Body: Body is {(body_size / total_range)*100:.0f}% of range (Needs > 60%)"
-
-        return True, f"SNIPER_ALERT: 5M Impulse Detected (Price > VWAP/EMA20 + Vol Spike + Close > Prev High) | Vol: {current_vol}"
-    
-    return False, f"Skipped: {', '.join(reasons)}"
-
-
-def check_1m_sniper_entry(df_1m, five_min_vwap, five_min_ema20, impulse_time=None):
-    """
-    Evaluates the 1M pullback entry criteria.
-    Args:
-        df_1m (pd.DataFrame): 1-minute candle dataframe.
-        five_min_vwap (float): VWAP from the 5M chart.
-        five_min_ema20 (float): EMA20 from the 5M chart.
-        impulse_time (float): Optional timestamp of when the 5M impulse fired.
-        impulse_vol (float): Optional volume of the 5M impulse candle.
-        nifty_1m_state (dict): Optional dict with 'close' and 'ema20' keys for Nifty 50.
-    Returns:
-        (bool, str): (True if entry triggered, Reason)
-    """
-    if df_1m is None or len(df_1m) < 4:
-         return False, "Insufficient 1M data"
-         
-    # 1M Pullback Logic evaluates the latest completed 1M candle (iloc[-2]) and history
-    current_1m = df_1m.iloc[-2]
-    prev_1m = df_1m.iloc[-3]
-    
-    close_price = current_1m['close']
-    open_price = current_1m['open']
-    prev_high = prev_1m['high']
-    
-    # Rule 0: Impulse Freshness Filter (Momentum Filter 4 - STRICTER)
-    # Prevent late entries: Momentum decays fast. Hard failure > 240 seconds (4 minutes)
-    if impulse_time:
-        import time
-        # Get the time of the current 1M candle being evaluated.
-        # Fallback to current system time if parsing fails.
-        try:
-             # df_1m['datetime'] is often a string or datetime obj.
-             current_candle_time = pd.to_datetime(current_1m['datetime']).timestamp()
-        except Exception:
-             current_candle_time = time.time()
-             
-        age_seconds = current_candle_time - impulse_time
-        if age_seconds > 240:
-             return False, f"Freshness Failure: Impulse expired ({int(age_seconds)}s ago. Max 240s)."
-             
-    # --- MOMENTUM CONTINUATION FILTERS ---
-    
-    # Momentum Filter 1: Volume Contraction During Pullback
-    # Impulse must have high volume, pullbacks must have low volume.
-    if impulse_vol and impulse_vol > 0:
-        pullback_vol = df_1m.tail(3)["volume"].mean()
-        if pullback_vol > (impulse_vol * 0.6):
-            return False, f"Momentum Cooling: Pullback Vol ({pullback_vol:.0f}) > 60% of Impulse Vol ({impulse_vol:.0f}). Sellers active."
-
-    # Momentum Filter 2: VWAP Cushion
-    # Price must not be hugging the VWAP boundary at the time of entry.
-    vwap_distance = abs(close_price - five_min_vwap) / five_min_vwap * 100
-    if vwap_distance < 0.25:
-        return False, f"Too Close To VWAP: Distance {vwap_distance:.2f}% < 0.25%. Exhaustion risk."
-
-    # Momentum Filter 3: Momentum Acceleration
-    # Check if the candle energy (range) is accelerating or dying.
-    recent_range = current_1m["high"] - current_1m["low"]
-    
-    # Avoid div by zero or negative indexing issues
-    if len(df_1m) >= 7:
-        avg_range = (df_1m.iloc[-7:-2]["high"] - df_1m.iloc[-7:-2]["low"]).mean()
-        if avg_range > 0 and recent_range < (avg_range * 0.8):
-            return False, f"Momentum Weakening: Recent candle range ({recent_range:.2f}) < 80% of avg ({avg_range:.2f})."
-
-    # Momentum Filter 5: Market Participation Check
-    # If Nifty is falling under its 1M EMA20, the market momentum is dying. Stocks will follow.
-    if nifty_1m_state:
-        nifty_close = nifty_1m_state.get('close', 0)
-        nifty_ema20 = nifty_1m_state.get('ema20', 0)
-        if nifty_close > 0 and nifty_ema20 > 0 and nifty_close < nifty_ema20:
-            return False, "Market Momentum Weak: NIFTY 1M Close < EMA20."
-
-    # --- STRUCTURAL PULLBACK RULES ---
-             
-    # Rule 1: Pullback - Price retraces to within <= 0.4% of 5M EMA20 OR <= 0.3% of 5M VWAP
-    dist_ema20 = abs(close_price - five_min_ema20) / five_min_ema20 * 100
-    dist_vwap = abs(close_price - five_min_vwap) / five_min_vwap * 100
-    
-    if dist_ema20 > 0.4 and dist_vwap > 0.3:
-        return False, f"No Pullback: Distance to 5M EMA20 ({dist_ema20:.2f}%) and 5M VWAP ({dist_vwap:.2f}%) too high."
-        
-    # Rule 2: Buyer confirmation - Current 1M candle is Green AND closes above previous 1M High
-    if close_price <= open_price:
-        return False, "No Confirmation: 1M Candle is Red (Close <= Open)."
-        
-    if close_price <= prev_high:
-        return False, "No Confirmation: 1M Close <= Previous 1M High."
-        
-    # Rule 3: Micro structure - Last 3 1M candles (excluding the forming one at iloc[-1])
-    # To check if at least 2 of the last 3 formed higher highs
-    # Specifically handling iloc[-4], iloc[-3], iloc[-2]
-    h1 = df_1m.iloc[-4]['high']
-    h2 = df_1m.iloc[-3]['high']
-    h3 = df_1m.iloc[-2]['high']
-    
-    higher_highs = 0
-    if h2 > h1: higher_highs += 1
-    if h3 > h2: higher_highs += 1
-    
-    if higher_highs < 1:   # If we need "at least 2 higher highs in last 3", it technically requires h3>h2 and h2>h1 OR history needs expansion.
-        # Wait, if we check h1, h2, h3. There are only two transitions: h1->h2, h2->h3.
-        # So "2 must form higher highs" means BOTH transitions must be true.
-        # Let's adjust slightly: If the sequence of the 3 candles' highs has two positive increases.
-        pass # Actually, the rule "At least 2 must form higher highs" for 3 candles means we need to look at 4 candles to get 3 highs, etc.
-        
-    # Let's be precise: "Last 3 1M candles: At least 2 must form higher highs or higher lows."
-    # We will check the last 3 completed candles against their immediate previous candles to allow HL -> HL -> Breakout.
-    c1, c2, c3 = df_1m.iloc[-4], df_1m.iloc[-3], df_1m.iloc[-2]
-    c0 = df_1m.iloc[-5] if len(df_1m) >=5 else None
-    
-    def is_bullish_struct(curr, prev):
-        return curr['high'] > prev['high'] or curr['low'] > prev['low']
-        
-    bullish_count = 0
-    if c0 is not None and is_bullish_struct(c1, c0): bullish_count += 1
-    if is_bullish_struct(c2, c1): bullish_count += 1
-    if is_bullish_struct(c3, c2): bullish_count += 1
-    
-    if bullish_count < 2:
-        return False, f"Micro Structure Failure: Only {bullish_count} bullish structure candles in last 3 (Need >= 2)."
-        
-    return True, "Sniper Entry Triggered: Pullback Confirmed + Bullish Micro Structure"
-
-def check_15m_bias(df):
-    """Checks 15-minute timeframe for trend bias/direction."""
-    import pandas as pd
-    if df is None or df.empty or len(df) < 5:
-        return 'NEUTRAL', "Insufficient data for 15M bias"
-    latest = df.iloc[-2]
-    price = latest['close']
-    vwap = latest.get('VWAP')
-    ema_20 = latest.get('EMA_20')
-    if pd.isna(vwap) or pd.isna(ema_20):
-        return 'NEUTRAL', "Missing VWAP/EMA20 on 15M"
-    
-    # Explicit check for 0.0 which could be valid in some data feeds but invalid for indicators
-    if vwap == 0 or ema_20 == 0:
-        return 'NEUTRAL', "Zero value for VWAP/EMA20 on 15M"
-        
-    if price > vwap and price > ema_20:
-        return 'BULLISH', f"15M: Price > VWAP ({vwap:.2f}) + EMA20"
-    if price < vwap and price < ema_20:
-        return 'BEARISH', f"15M: Price < VWAP ({vwap:.2f}) + below EMA20"
-    return 'NEUTRAL', f"15M: Choppy (Price near VWAP/EMA20)"
-
-def check_chop_filter(df):
-    """
-    Filters out stocks that are chopping sideways or have weak trends.
-    Returns: (is_clean_trend, reason)
-    """
-    if df is None or len(df) < 10:
-        return True, "Insufficient Data" # Default to True (allow) if data scarce
-    
-    # 1. VWAP Chop Check (Zig-Zag around VWAP)
-    # Count how many times price crossed VWAP in last 10 candles
-    recent = df.iloc[-10:]
-    crosses = 0
-    was_above = None
-    
-    for i, row in recent.iterrows():
-        close = row['close']
-        vwap = row.get('VWAP')
-        # FIX: Handle 0.0 correctly (pd.isna allows 0, but rejects NaN/None)
-        if pd.isna(vwap): continue
-        
-        is_above = close >= vwap
-        if was_above is not None and is_above != was_above:
-            crosses += 1
-        was_above = is_above
-        
-    if crosses >= 4:
-        # Too many crosses = CHOP
-        return False, f"Choppy Action ({crosses} VWAP crosses in 10 candles)"
-
-    # 2. EMA Slope Check (Trend Strength)
-    # Compare EMA20 now vs 5 candles ago
-    # FIX: Use completed candle (iloc[-2]) and 5 bars prior (iloc[-7]) 
-    current_ema = df.iloc[-2].get('EMA_20')
-    past_ema = df.iloc[-7].get('EMA_20') 
-    
-    if pd.notna(current_ema) and pd.notna(past_ema) and past_ema != 0:
-        # FIX: Remove abs() - Long-only strategy needs POSITIVE slope
-        slope_pct = ((current_ema - past_ema) / past_ema) * 100
-        
-        # If slope is negative or very flat (< 0.05% over 25 mins), it's weak
-        if slope_pct < 0.05:
-             return False, f"Weak/Negative Trend (EMA Slope {slope_pct:.3f}% < 0.05%)"
-
-    return True, "Trend Clean"
 
 def calculate_sr_levels(df):
     """

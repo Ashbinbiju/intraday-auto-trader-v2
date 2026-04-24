@@ -923,31 +923,54 @@ def manage_positions(dhan, token_map):
                     risk_per_share = entry_price - original_sl
                     
                     if risk_per_share > 0:
-                        # Calculate the maximum R:R achieved at the absolute peak
                         highest_ltp = pos.get('highest_ltp', current_ltp)
                         max_profit_achieved = highest_ltp - entry_price
                         max_rr = max_profit_achieved / risk_per_share
                         
-                        proposed_sl = pos['sl'] # Default to no movement
+                        proposed_sl = pos['sl']
                         level_achieved = pos.get('tsl_level', 0)
+                        new_level = level_achieved
+                        log_msg = ""
                         
                         # --- Level 1: Breakeven (At 1R Profit) ---
                         if max_rr >= 1.0 and level_achieved < 1:
                             proposed_sl = entry_price * 1.001 # Entry + 0.1% to cover fees
                             new_level = 1
-                            log_msg = f"🔒 Trailing SL Level 1: {symbol} hit +1R. SL moved to Breakeven ({proposed_sl:.2f})"
+                            log_msg = f"🔒 TSL Level 1: {symbol} hit +1R. SL → Breakeven ({proposed_sl:.2f})"
                             
-                        # --- Level 2: Lock 1R (At 2R Profit) ---
-                        elif max_rr >= 2.0 and level_achieved < 2:
-                            proposed_sl = entry_price + (1.0 * risk_per_share)
-                            new_level = 2
-                            log_msg = f"🔒 Trailing SL Level 2: {symbol} hit +2R. SL moved to lock +1R ({proposed_sl:.2f})"
+                        # --- Level 2: Trail below EMA20 / Last HL (At 1.5R Profit) ---
+                        elif max_rr >= 1.5 and level_achieved < 2:
+                            # Fetch current EMA20 and find recent higher low for dynamic trail
+                            trail_sl = entry_price * 1.001  # Fallback to breakeven
+                            try:
+                                token_for_trail = token_map.get(symbol)
+                                if token_for_trail:
+                                    df_trail = fetch_candle_data(dhan, token_for_trail, symbol, "FIVE_MINUTE")
+                                    if df_trail is not None and len(df_trail) >= 5:
+                                        df_trail = calculate_indicators(df_trail)
+                                        
+                                        # EMA20 buffer: EMA20 - 0.1%
+                                        ema20_val = df_trail.iloc[-2].get('EMA_20')
+                                        if ema20_val and not pd.isna(ema20_val):
+                                            ema20_trail = ema20_val * 0.999
+                                        else:
+                                            ema20_trail = 0
+                                        
+                                        # Recent higher low (last 5 confirmed candles)
+                                        recent_lows = df_trail.iloc[-6:-1]['low']
+                                        swing_low = recent_lows.min() * 0.999
+                                        
+                                        # Use the higher of: EMA20 trail or swing low
+                                        candidates = [c for c in [ema20_trail, swing_low] if c > entry_price]
+                                        if candidates:
+                                            trail_sl = max(candidates)
+                            except Exception as e_trail:
+                                logger.warning(f"TSL trail calc error for {symbol}: {e_trail}")
                             
-                        # --- Level 3: Lock 2R (At 3R Profit) ---
-                        elif max_rr >= 3.0 and level_achieved < 3:
-                            proposed_sl = entry_price + (2.0 * risk_per_share)
-                            new_level = 3
-                            log_msg = f"🔒 Trailing SL Level 3: {symbol} hit +3R. SL moved to lock +2R ({proposed_sl:.2f})"
+                            if trail_sl > pos['sl']:
+                                proposed_sl = trail_sl
+                                new_level = 2
+                                log_msg = f"🔒 TSL Level 2: {symbol} hit +1.5R. SL → Trail ({proposed_sl:.2f})"
                         
                         # Update State if SL strictly moves UP
                         if proposed_sl > pos['sl']:
@@ -1311,192 +1334,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
     watchdog_thread = threading.Thread(target=run_heartbeat_watchdog, daemon=True, name="Watchdog")
     watchdog_thread.start()
 
-    # 3.8. Start Sniper Execution Loop Thread
-    def run_sniper_execution_loop(api_session, t_map):
-        time.sleep(15) # Wait for bot to initialize
-        logger.info("🎯 Sniper Execution Thread started (45s interval)")
-        while BOT_STATE.get("is_running", True):
-            try:
-                BOT_STATE.setdefault("heartbeat", {})["sniper_execution"] = time.time()
-                
-                # Check Market Status
-                is_open, _ = is_market_open()
-                if not is_open:
-                    time.sleep(60)
-                    continue
-                    
-                # Check Trading Limits
-                trading_end_time = config_manager.get("limits", "trading_end_time")
-                trading_start_time = config_manager.get("limits", "trading_start_time") or "09:45"
-                current_time = get_ist_now().strftime("%H:%M")
-                
-                if current_time < trading_start_time or current_time >= trading_end_time:
-                    time.sleep(60)
-                    continue
-                from indicators import check_1m_sniper_entry, calculate_indicators
-                
-                watchlist = BOT_STATE.get("sniper_watchlist", {})
-                expired_symbols = []
-                dry_run = config_manager.get("general", "dry_run") or False
-                max_trades_day = config_manager.get("limits", "max_trades_per_day") or 3
-                
-                for symbol, data in list(watchlist.items()):
-                     # 1. Prune Expired (Older than 15 mins)
-                     if time.time() - data["added_at"] > 900:
-                         logger.info(f"⏳ Sniper Watchlist Timeout: Removed {symbol} (No pullback within 15min)")
-                         expired_symbols.append(symbol)
-                         continue
-                         
-                     # 2. Prevent Multiple Positions
-                     if symbol in BOT_STATE.get("positions", {}) and BOT_STATE["positions"][symbol].get("status") == "OPEN":
-                         expired_symbols.append(symbol)
-                         continue
-                         
-                     # 3. Check Trading Limits dynamically again before executing
-                     if BOT_STATE.get("total_trades_today", 0) >= max_trades_day:
-                         break
-                         
-                     # 4. Idempotency Check (Prevent duplicate orders on aggressive loop)
-                     correlation_id = generate_correlation_id(symbol, "SNIPER_BUY")
-                     from main import is_order_inflight # Check pending by symbol
-                     if is_order_inflight(symbol):
-                         logger.warning(f"⏩ Skipping {symbol} Snipe: Order already pending execution.")
-                         expired_symbols.append(symbol) # Clear it since an order is already flying
-                         continue
-                         
-                     token = t_map.get(symbol)
-                     if not token:
-                         continue
-                         
-                     # Re-fetch latest 5M for VWAP/EMA20 anchors
-                     df_5m = fetch_candle_data(api_session, token, symbol, "FIVE_MINUTE")
-                     if df_5m is None or len(df_5m) < 2: continue
-                     
-                     df_5m = calculate_indicators(df_5m)
-                     latest_5m = df_5m.iloc[-2]
-                     five_m_vwap = latest_5m.get('VWAP')
-                     five_m_ema20 = latest_5m.get('EMA_20')
-                     
-                     if pd.isna(five_m_vwap) or pd.isna(five_m_ema20): continue
-                     
-                     # Check 1M Pullback
-                     df_1m = fetch_candle_data(api_session, token, symbol, "ONE_MINUTE")
-                     if df_1m is not None:
-                         impulse_time = data.get('impulse_time')
-                         impulse_vol = data.get('impulse_vol', 0)
-                         nifty_1m_state = BOT_STATE.get("nifty_1m")
-                         
-                         is_snipe, snipe_reason = check_1m_sniper_entry(
-                             df_1m, 
-                             five_m_vwap, 
-                             five_m_ema20, 
-                             impulse_time=impulse_time,
-                             impulse_vol=impulse_vol,
-                             nifty_1m_state=nifty_1m_state
-                         )
-                         
-                         if is_snipe:
-                             logger.info(f"🔫 SNIPER EXECUTING {symbol}: {snipe_reason}")
-                             expired_symbols.append(symbol)
-                             
-                             recent_1m = df_1m.iloc[-6:-1]
-                             sl_price = recent_1m['low'].min()
-                             buffered_sl = sl_price * 0.999
-                             
-                             live_ltp = fetch_ltp(api_session, token, symbol)
-                             if live_ltp is None or live_ltp == 0:
-                                  logger.warning(f"LTP missing for sniper {symbol}")
-                                  continue
-                                  
-                             if live_ltp <= buffered_sl:
-                                  logger.warning(f"Invalid Sniper SL for {symbol}. LTP: {live_ltp} SL: {buffered_sl}")
-                                  continue
-                                  
-                             try:
-                                  balance = get_account_balance(api_session, dry_run)
-                             except Exception:
-                                  balance = 100000.0  # Fallback
-                                  
-                             risk_pct = config_manager.get("position_sizing", "risk_per_trade_pct") or 1.0
-                             max_pos_pct = config_manager.get("position_sizing", "max_position_size_pct") or 20.0
-                             min_sl_pct = config_manager.get("position_sizing", "min_sl_distance_pct") or 0.5
-                             
-                             calc_qty = calculate_position_size(
-                                  entry_price=live_ltp,
-                                  sl_price=buffered_sl,
-                                  balance=balance,
-                                  risk_pct=risk_pct,
-                                  max_position_pct=max_pos_pct,
-                                  min_sl_pct=min_sl_pct,
-                                  symbol=symbol
-                             )
-                             
-                             if calc_qty > 0:
-                                  from main import check_and_register_pending_order
-                                  
-                                  if not check_and_register_pending_order(correlation_id, {"symbol": symbol, "type": "BUY"}):
-                                      logger.warning(f"⏩ {symbol}: Blocked by concurrency/pending order check.")
-                                      continue
-                                      
-                                  order_id = place_buy_order(api_session, symbol, token, calc_qty, correlation_id=correlation_id)
-                                  
-                                  if order_id or dry_run:
-                                      target_pct = config_manager.get("risk", "target_pct") or 0.02
-                                      target_price = live_ltp * (1 + target_pct) 
-                                      
-                                      with state_lock:
-                                           BOT_STATE["total_trades_today"] += 1
-                                           BOT_STATE["stock_trade_counts"][symbol] = BOT_STATE["stock_trade_counts"].get(symbol, 0) + 1
-                                           BOT_STATE["positions"][symbol] = {
-                                                "symbol": symbol,
-                                                "entry_price": live_ltp,
-                                                "qty": calc_qty,
-                                                "sl": buffered_sl,
-                                                "target": target_price,
-                                                "original_sl": buffered_sl,
-                                                "highest_ltp": live_ltp,
-                                                "status": "OPEN",
-                                                "entry_time": get_ist_now().strftime("%H:%M:%S"),
-                                                "entry_time_ts": time.time(),
-                                                "is_breakeven_active": False,
-                                                "setup_grade": "SNIPER",
-                                                "order_id": order_id if not dry_run else "DRY_RUN",
-                                                "exit_in_progress": False
-                                           }
-                                           save_state(BOT_STATE)
-                                           broadcast_state()
-                                           
-                                           from main import clear_pending_order
-                                           clear_pending_order(correlation_id)
-                                           
-                                      leverage = get_leverage()      
-                                      try:
-                                          log_trade_execution(BOT_STATE["positions"][symbol], 0, "BUY", leverage)
-                                      except Exception as ex:
-                                          logger.error(f"Failed to log trade to Supabase: {ex}")
-                                      
-                                      msg = f"🟢 **SNIPER EXECUTED**\nSymbol: {symbol}\nQty: {calc_qty}\nLTP: ₹{live_ltp:.2f}\nRisk SL: ₹{buffered_sl:.2f} \nDist: {((live_ltp-buffered_sl)/live_ltp)*100:.2f}%\nStatus: {'PAPER TRADING' if dry_run else 'LIVE'}"
-                                      send_telegram_message(msg)
-                                  else:
-                                      # Order failed to place, clear lock
-                                      from main import clear_pending_order
-                                      clear_pending_order(correlation_id)
 
-                # Prune explicitly removed / expired watchlist items
-                if expired_symbols:
-                    with state_lock:
-                        for s in expired_symbols:
-                            if s in BOT_STATE.get("sniper_watchlist", {}):
-                                del BOT_STATE["sniper_watchlist"][s]
-                        save_state(BOT_STATE)
-                        
-                time.sleep(45)  # Fast Sniper Watchlist Poll loop limit
-            except Exception as e:
-                logger.exception(f"Sniper Execution Loop Error: {e}")
-                time.sleep(45)
-
-    sniper_thread = threading.Thread(target=run_sniper_execution_loop, args=(dhan, token_map), daemon=True, name="SniperLoop")
-    sniper_thread.start()
 
     # 4. Start Dhan Order WebSocket (Real-time Updates)
     try:
@@ -1608,41 +1446,17 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                     time.sleep(10)
                     continue
                     
-                # --- Fetch Market Indices (New) ---
-                # 1. Fetch NIFTY 50 1M Data for Sniper Market Participation Filter
-                try:
-                    # Token for Nifty 50 Index on Dhan is "13"
-                    nifty_token = "13" if "Nifty 50" not in token_map else token_map["Nifty 50"]
-                    # If token_map doesn't have it explicitly mapped by that name, '13' is the known IDX_I token.
-                    # Fallback to direct symbol token.
-                    nifty_df = fetch_candle_data(dhan, nifty_token, "NIFTY 50", "ONE_MINUTE")
-                    if nifty_df is not None and len(nifty_df) > 20:
-                        from indicators import calculate_indicators
-                        nifty_df = calculate_indicators(nifty_df)
-                        latest_nifty = nifty_df.iloc[-1]
-                        
-                        BOT_STATE["nifty_1m"] = {
-                            "close": latest_nifty.get('close', 0),
-                            "ema20": latest_nifty.get('EMA_20', 0),
-                            "timestamp": time.time()
-                        }
-                    else:
-                        logger.warning("Failed to fetch/calculate NIFTY 50 1M for market participation filter.")
-                except Exception as e_nifty:
-                    logger.error(f"Error fetching NIFTY 1M data: {e_nifty}")
-    
-                # 2. Fetch General Indices for UI
+                # --- Fetch Market Indices for UI ---
                 indices = fetch_market_indices()
                 if indices:
                     BOT_STATE["indices"] = indices
                     
-                # --- Pre-Fetch Top Sectors for UI (Always, regardless of strategy mode) ---
-                strategy_mode = config_manager.get("general", "strategy_mode") or "SECTOR_MOMENTUM"
+                # --- Fetch Top 4 Sectors ---
                 sectors = fetch_top_performing_sectors()
                 if sectors:
-                    BOT_STATE["top_sectors"] = sectors[:4] # Store top 4 for UI
+                    BOT_STATE["top_sectors"] = sectors[:4]
                 
-                broadcast_state() # Update UI with indices & sectors
+                broadcast_state()
                 # ----------------------------------
 
                 if current_time < trading_start_time:
@@ -1658,76 +1472,39 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                     time.sleep(60)
                     continue
                 
-                # --- STRATEGY SELECTION ---
-                # strategy_mode already fetched above
-                
+                # --- SECTOR MOMENTUM STRATEGY ---
                 stocks_to_scan = []
                 seen_symbols = set()
 
-                if strategy_mode == "MARKET_MOVER":
-                    logger.info("⚡ Strategy: Market Movers (Top Gainers)")
-                    try:
-                        from market_mover import fetch_market_movers
-                        # Fetch Top 50 Gainers to ensure enough candidates
-                        raw_movers = fetch_market_movers("Gainer")
-                        
-                        if raw_movers:
-                             logger.info(f"Fetched {len(raw_movers)} market movers. Top: {[m['symbol'] for m in raw_movers[:5]]}")
-                             
-                             # Log to Supabase (Async to avoid blocking)
-                             from database import log_market_movers_to_db
-                             threading.Thread(target=log_market_movers_to_db, args=(raw_movers[:15],)).start()
-                        
-                        for stock in raw_movers:
-                            symbol = stock['symbol']
-                            
-                            if symbol in seen_symbols: continue
-                            seen_symbols.add(symbol)
-                            
-                            # Skip if Position Open
-                            if symbol in BOT_STATE["positions"] and BOT_STATE["positions"][symbol]["status"] == "OPEN":
-                                continue
-                                
-                            # Skip if Stock limits hit
-                            current_stock_trades = BOT_STATE["stock_trade_counts"].get(symbol, 0)
-                            if current_stock_trades >= max_trades_stock:
-                                continue
-                                
-                            stock['sector'] = "Market Mover"
-                            stocks_to_scan.append(stock)
-                            
-                            # Limit scanning to top 15 candidates as per user request
-                            if len(stocks_to_scan) >= 15: break
-                            
-                    except Exception as e_mover:
-                        logger.error(f"Market Mover Strategy Failed: {e_mover}")
-
+                if sectors:
+                     logger.info(f"Scraped {len(sectors)} sectors. Top 4: {[s['name'] for s in sectors[:4]]}")
                 else:
-                    # DEFAULT: SECTOR MOMENTUM
-                    if sectors:
-                         logger.info(f"DEBUG: Main Loop Scraped {len(sectors)} sectors. Top: {[s['name'] for s in sectors[:4]]}")
-                    else:
-                        logger.info("No sector data available. Skipping scan. 📉")
-                    
-                    target_sectors = sectors[:4] if sectors else []
-        
-                    for sector in target_sectors:
-                        stocks = fetch_stocks_in_sector(sector['key'])
-                        for stock in stocks:
-                            symbol = stock['symbol']
+                    logger.info("No sector data available. Skipping scan. 📉")
+                
+                target_sectors = sectors[:4] if sectors else []
+    
+                for sector in target_sectors:
+                    stocks = fetch_stocks_in_sector(sector['key'])
+                    for stock in stocks:
+                        symbol = stock['symbol']
+                        
+                        if symbol in seen_symbols: continue
+                        seen_symbols.add(symbol)
+                        
+                        # Filter: Only positive stocks that moved less than 2%
+                        stock_change = stock.get('change', 0) or 0
+                        if stock_change <= 0 or stock_change >= 2.0:
+                            continue
+                        
+                        if symbol in BOT_STATE["positions"] and BOT_STATE["positions"][symbol]["status"] == "OPEN":
+                            continue
                             
-                            if symbol in seen_symbols: continue
-                            seen_symbols.add(symbol)
-                            
-                            if symbol in BOT_STATE["positions"] and BOT_STATE["positions"][symbol]["status"] == "OPEN":
-                                continue
-                                
-                            current_stock_trades = BOT_STATE["stock_trade_counts"].get(symbol, 0)
-                            if current_stock_trades >= max_trades_stock:
-                                continue
-                            
-                            stock['sector'] = sector['name']
-                            stocks_to_scan.append(stock)
+                        current_stock_trades = BOT_STATE["stock_trade_counts"].get(symbol, 0)
+                        if current_stock_trades >= max_trades_stock:
+                            continue
+                        
+                        stock['sector'] = sector['name']
+                        stocks_to_scan.append(stock)
     
                 if BOT_STATE["total_trades_today"] >= max_trades_day:
                     time.sleep(60)
@@ -1776,49 +1553,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                         if len(BOT_STATE['signals']) > 50: BOT_STATE['signals'] = BOT_STATE['signals'][:50]
                         broadcast_state()
     
-                        # --- SNIPER ALERT REGISTRATION ---
-                        if message.startswith("SNIPER_ALERT"):
-                            # STRICT TIME CHECK: Do not enter new trades outside the allowed trading window
-                            trading_start_time = config_manager.get("limits", "trading_start_time") or "09:45"
-                            trading_end_time = config_manager.get("limits", "trading_end_time") or "11:45"
-                            ist_now = get_ist_now()
-                            current_time_str = ist_now.strftime("%H:%M")
-                            if current_time_str < trading_start_time or current_time_str >= trading_end_time:
-                                logger.info(f"⏳ Ignoring Sniper Alert for {symbol}: Current time {current_time_str} is outside trading window ({trading_start_time} - {trading_end_time}).")
-                                continue
-                                
-                            current_trades = len([p for p in BOT_STATE["positions"].values() if p["status"] == "OPEN"])
-                            if current_trades < max_trades_day:
-                                # Add to Watchlist
-                                with state_lock:
-                                    if symbol not in BOT_STATE.get("sniper_watchlist", {}):
-                                        logger.info(f"🎯 Sniper Alert Registered for {symbol} at {price}. Waiting for 1M Pullback...")
-                                        
-                                        # Use signal_data['time'] if available, else current time
-                                        # To accurately track 5M candle freshness
-                                        impulse_time = pd.to_datetime(signal_data.get('time', "now")).timestamp() if 'time' in signal_data else time.time()
-                                        
-                                        # Extract Volume from message if present (Format: "... | Vol: 12345")
-                                        impulse_vol = 0
-                                        if "| Vol:" in message:
-                                            try:
-                                                impulse_vol = float(message.split("| Vol:")[1].strip())
-                                            except Exception:
-                                                pass
-                                        
-                                        if "sniper_watchlist" not in BOT_STATE:
-                                            BOT_STATE["sniper_watchlist"] = {}
-                                        BOT_STATE["sniper_watchlist"][symbol] = {
-                                            "added_at": time.time(),
-                                            "impulse_time": impulse_time,
-                                            "impulse_vol": impulse_vol,
-                                            "5m_vwap": 0.0, # Will fetch real latest later before pullback execution,
-                                            "5m_ema20": 0.0,
-                                        }
-                                        
-                                save_state(BOT_STATE)
-                                
-                        # --- AUTO BUY LOGIC (Structure-Based Risk) ---
+                        # --- AUTO BUY LOGIC (Structure-Based SL + 2R TP) ---
                         if message.startswith("Strong Buy"):
 
                             current_trades = len([p for p in BOT_STATE["positions"].values() if p["status"] == "OPEN"])
@@ -1827,159 +1562,50 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                 
                                 token = token_map.get(symbol)
                                 if token:
-                                    use_structure = config_manager.get("structure_risk", "use_structure_based") or False
+                                    # Fetch 5M candles for structure-based SL
+                                    from indicators import calculate_indicators
+                                    df_risk = fetch_candle_data(dhan, token, symbol, "FIVE_MINUTE")
                                     
-                                    if use_structure:
-                                        # STEP 1: Re-validate 15M Bias (The Golden Rule)
-                                        # Signals could be queued, market may have changed since scanner ran
-                                        df_15m_recheck = fetch_candle_data(dhan, token, symbol, "FIFTEEN_MINUTE")
-                                        
-                                        if df_15m_recheck is None or df_15m_recheck.empty:
-                                            logger.warning(f"❌ Skipping {symbol}: Unable to fetch 15M data for re-validation")
-                                            continue
-                                        
-                                        from indicators import check_15m_bias, calculate_indicators
-                                        df_15m_recheck = calculate_indicators(df_15m_recheck)
-                                        bias_15m, bias_reason = check_15m_bias(df_15m_recheck)
-                                        
-                                        if bias_15m != 'BULLISH':
-                                            logger.warning(f"❌ Trade REJECTED: {symbol} | 15M bias changed to {bias_15m} ({bias_reason})")
-                                            continue
-                                        
-                                        logger.info(f"✅ 15M Bias Confirmed: {symbol} | {bias_reason}")
-                                        
-                                        # STEP 1.5: S/R Resistance Check (New)
-                                        # Use the 15m data (multi-day) to find static S/R (PDH/CDH)
-                                        from indicators import calculate_sr_levels, get_dynamic_sr_levels
-                                        sr_levels = calculate_sr_levels(df_15m_recheck)
-                                        
-                                        static_resistances = []
-                                        pdh_val = None
-                                        if sr_levels:
-                                            pdh_val = sr_levels.get('PDH')
-                                            cdh_val = sr_levels.get('CDH')
-                                            if pdh_val and pdh_val > price: static_resistances.append(pdh_val)
-                                            if cdh_val and cdh_val > price: static_resistances.append(cdh_val)
-                                        
-                                        # STEP 2: Fetch 5-minute candles for structure analysis
-                                        df_risk = fetch_candle_data(dhan, token, symbol, "FIVE_MINUTE")
-                                        
-                                        if df_risk is None or df_risk.empty:
-                                            logger.warning(f"❌ Skipping {symbol}: No data for risk calc")
-                                            continue # Don't take trade without risk calculation
-                                        
-                                        # Calculate indicators (VWAP, EMAs)
-                                        df_risk = calculate_indicators(df_risk)
-                                        
-                                        if len(df_risk) < 2:
-                                            logger.warning(f"❌ Skipping {symbol}: Insufficient candle data")
-                                            continue
-                                        
-                                        # Get latest VWAP and EMA20 (Use confirmed candle to avoid repainting)
-                                        latest_candle = df_risk.iloc[-2]
-                                        vwap = latest_candle.get('VWAP')
-                                        ema20 = latest_candle.get('EMA_20')
-                                        
-                                        if pd.isna(vwap) or pd.isna(ema20):
-                                            logger.warning(f"❌ Skipping {symbol}: Missing VWAP or EMA20")
-                                            continue
-                                        
-                                        # Calculate Dynamic Auto-Pivot S/R using the 5M chart
-                                        dynamic_resistances = []
-                                        dyn_levels = get_dynamic_sr_levels(df_risk)
-                                        for level in dyn_levels:
-                                            # If pivot zone is acting as resistance above current price
-                                            if level['lo'] > price: 
-                                                dynamic_resistances.append(level['lo'])
-                                                
-                                        all_resistances = static_resistances + dynamic_resistances
-                                        nearest_res = min(all_resistances) if all_resistances else None
-                                        
-                                        if nearest_res:
-                                            dist_pct = (nearest_res - price) / price * 100
-                                            if dist_pct < 0.25:
-                                                logger.warning(f"❌ Trade REJECTED: {symbol} | Too close to Resistance (Res: {nearest_res:.2f}, Dist: {dist_pct:.2f}% < 0.25%)")
-                                                continue
-                                            logger.info(f"✅ S/R Check Pass: Nearest Res {nearest_res:.2f} (Dist: {dist_pct:.2f}%)")
-                                        else:
-                                            logger.info(f"🚀 Blue Sky Breakout: {symbol} price {price} > All known Resistances")
-                                            
-                                        # Calculate structure-based SL
-                                        sl_price, sl_reason, sl_distance = calculate_structure_based_sl(
-                                            df_risk, price, vwap, ema20
-                                        )
-                                        
-                                        if sl_price is None:
-                                            logger.warning(f"❌ Trade REJECTED: {symbol} | Reason: {sl_reason}")
-                                            continue
-                                        
-                                        # Rule 2: Reward Space (R:R to Resistance)
-                                        # Only applies if there IS a resistance overhead.
-                                        if nearest_res:
-                                            risk = price - sl_price
-                                            reward_space = nearest_res - price
-                                            
-                                            if risk > 0:
-                                                rr_to_res = reward_space / risk
-                                                
-                                                # New R:R Logic (Refined)
-                                                # 1. Strict Reject if < 1.2
-                                                if rr_to_res < 1.2:
-                                                    logger.warning(f"❌ Trade REJECTED: {symbol} | Low Reward to Res ({rr_to_res:.2f}R < 1.2R)")
-                                                    continue
-                                                
-                                                # 2. Confirmation Zone (1.2 - 1.5)
-                                                elif 1.2 <= rr_to_res < 1.5:
-                                                    # Require Extra Strength: Volume > 1.8x OR Breakout > CDH
-                                                    # Require Extra Strength: Volume > 1.8x OR Breakout > CDH
-                                                    current_vol = latest_candle.get('volume', 0)
-                                                    avg_vol = latest_candle.get('Volume_SMA_20', 0)
-                                                    vol_ratio = current_vol / avg_vol if avg_vol > 0 else 0
-                                                    
-                                                    is_high_vol = vol_ratio > 1.8
-                                                    # Check if price broke CDH (Blue Sky) - closest approx using SR levels
-                                                    is_breakout = False
-                                                    if sr_levels:
-                                                        cdh_level = sr_levels.get('CDH', 999999)
-                                                        if price > cdh_level:
-                                                            is_breakout = True
-                                                    
-                                                    if is_high_vol or is_breakout:
-                                                        logger.info(f"✅ Low R:R Accepted ({rr_to_res:.2f}R) due to Strength: Vol={vol_ratio:.1f}x or Breakout={is_breakout}")
-                                                    else:
-                                                        logger.warning(f"❌ Trade REJECTED: {symbol} | Low R:R ({rr_to_res:.2f}R) & Weak Confirmation (Vol {vol_ratio:.1f}x < 1.8x, No Breakout)")
-                                                        continue
-                                                
-                                                else:
-                                                    logger.info(f"✅ S/R Reward Check Pass: {rr_to_res:.2f}R to Res (> 1.5R)")
-
-                                        # Update PDH for TP calculation (prefer calculated value)
-                                        pdh = pdh_val if 'pdh_val' in locals() and pdh_val > 0 else BOT_STATE.get("previous_day_high", {}).get(symbol)
-                                        
-                                        # Calculate structure-based TP
-                                        target_price, tp_reason, rr_ratio = calculate_structure_based_tp(
-                                            price, sl_price, df_risk, pdh, dynamic_resistances
-                                        )
-                                        
-                                        if target_price is None:
-                                            logger.warning(f"❌ Trade REJECTED: {symbol} | Reason: {tp_reason}")
-                                            continue
-                                        
-                                        logger.info(f"✅ Structure Risk Validated: {symbol}")
-                                        logger.info(f"   SL: ₹{sl_price:.2f} | {sl_reason}")
-                                        logger.info(f"   TP: ₹{target_price:.2f} | {tp_reason}")
-                                    else:
-                                        # Fallback to percentage-based (old system)
-                                        sl_price = price * (1 - config_manager.get("risk", "stop_loss_pct"))
-                                        target_price = price * (1 + config_manager.get("risk", "target_pct"))
-                                        logger.info(f"Using percentage-based risk (fallback mode)")
+                                    if df_risk is None or df_risk.empty:
+                                        logger.warning(f"❌ Skipping {symbol}: No data for risk calc")
+                                        continue
+                                    
+                                    df_risk = calculate_indicators(df_risk)
+                                    
+                                    if df_risk is None or len(df_risk) < 2:
+                                        logger.warning(f"❌ Skipping {symbol}: Insufficient candle data")
+                                        continue
+                                    
+                                    latest_candle = df_risk.iloc[-2]
+                                    vwap = latest_candle.get('VWAP')
+                                    ema20 = latest_candle.get('EMA_20')
+                                    
+                                    if pd.isna(vwap) or pd.isna(ema20):
+                                        logger.warning(f"❌ Skipping {symbol}: Missing VWAP or EMA20")
+                                        continue
+                                    
+                                    # Structure-based SL: min(swing low, EMA20 buffer, VWAP buffer)
+                                    sl_price, sl_reason, sl_distance = calculate_structure_based_sl(
+                                        df_risk, price, vwap, ema20
+                                    )
+                                    
+                                    if sl_price is None:
+                                        logger.warning(f"❌ Trade REJECTED: {symbol} | Reason: {sl_reason}")
+                                        continue
+                                    
+                                    # 2R Target: entry + 2 * risk
+                                    risk_per_share = price - sl_price
+                                    target_price = price + (2.0 * risk_per_share)
+                                    
+                                    logger.info(f"✅ Risk Validated: {symbol}")
+                                    logger.info(f"   SL: ₹{sl_price:.2f} | {sl_reason}")
+                                    logger.info(f"   TP: ₹{target_price:.2f} | 2R Target (Risk: ₹{risk_per_share:.2f})")
                                     
                                     # === POSITION SIZING ===
                                     sizing_mode = config_manager.get("position_sizing", "mode") or "dynamic"
                                     dry_run = config_manager.get("general", "dry_run")
                                     
                                     if sizing_mode == "dynamic":
-                                        # Dynamic position sizing based on account balance and SL
                                         balance = get_account_balance(dhan, dry_run)
                                         risk_pct = config_manager.get("position_sizing", "risk_per_trade_pct") or 1.0
                                         max_pos_pct = config_manager.get("position_sizing", "max_position_size_pct") or 20.0
@@ -1989,33 +1615,14 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                             price, sl_price, balance, risk_pct, max_pos_pct, min_sl_pct, symbol
                                         )
                                         
-                                        # Safety check: Skip trade if qty is 0 (failed validation)
                                         if quantity <= 0:
                                             logger.warning(f"❌ Trade SKIPPED: {symbol} | Position sizing returned qty=0")
                                             continue
-                                            
-                                        # New Rule: Min Actual Risk Check
-                                        # Actual Risk % = (Qty * SL_Dist_Amt) / Balance
-                                        risk_amt = quantity * (price - sl_price)
-                                        actual_risk_pct = (risk_amt / balance) * 100 if balance > 0 else 0
-                                        
-                                        # Threshold: Safety=0.5%, Trend=0.35%
-                                        regime = BOT_STATE.get("market_regime", "SAFETY_MODE")
-                                        min_risk_threshold = 0.5 if regime == "SAFETY_MODE" else 0.35
-                                        
-                                        if actual_risk_pct < min_risk_threshold:
-                                            logger.warning(f"❌ Trade REJECTED: {symbol} | Actual Risk too low ({actual_risk_pct:.2f}% < {min_risk_threshold}%) - Not worth capital lock.")
-                                            continue
-                                            
-                                        logger.info(f"✅ Risk Check Passed: Actual Risk {actual_risk_pct:.2f}% (>= {min_risk_threshold}%)")
                                     else:
-                                        # Fixed quantity mode (backwards compatible)
                                         quantity = config_manager.get("general", "quantity") or 1
                                         logger.info(f"📊 Fixed Quantity Mode: {quantity} shares")
                                     
-                                    # Place the order
-                                    
-                                    # LAST SECOND SAFETY CHECK (Watchdog Race Condition)
+                                    # SAFETY CHECK
                                     if not BOT_STATE.get("is_trading_allowed", True):
                                         logger.warning("🚨 Trading Disabled by Watchdog! Skipping remaining signals.")
                                         break
@@ -2031,23 +1638,20 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                     if orderId:
                                         is_success, status, avg_price = verify_order_status(dhan, orderId)
                                         
-                                        # --- TIMEOUT RECOVERY: LAST RESORT ---
+                                        # TIMEOUT RECOVERY
                                         if not is_success and "TIMEOUT" in str(status):
-                                            logger.warning(f"⚠️ Order Verification Timed Out for {symbol}. Checking Positions directly...")
+                                            logger.warning(f"⚠️ Order Verification Timed Out for {symbol}. Checking Positions...")
                                             from dhan_api_helper import fetch_net_positions
                                             live_positions = fetch_net_positions(dhan)
                                             if live_positions:
                                                 for pos in live_positions:
-                                                    # Check if symbol matches and qty matches (approx)
                                                     if pos.get("tradingsymbol") == symbol and abs(int(pos.get("netqty", 0))) == quantity:
-                                                        logger.info(f"✅ RECOVERY SUCCESS: Found {symbol} in positions! Assuming Order Success.")
+                                                        logger.info(f"✅ RECOVERY: Found {symbol} in positions!")
                                                         is_success = True
                                                         status = "TRADED (RECOVERED)"
                                                         avg_price = float(pos.get("avgnetprice", 0))
-                                                        # If avg_price is 0, use last known price
                                                         if avg_price == 0: avg_price = price
                                                         break
-                                        # -------------------------------------
                                         
                                         if is_success:
                                             entry_price = avg_price if avg_price > 0 else price
@@ -2068,15 +1672,13 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                                     "order_id": orderId
                                                 }
                                                 BOT_STATE["total_trades_today"] += 1
-                                                
-                                                # Update specific stock count
                                                 BOT_STATE["stock_trade_counts"][symbol] = BOT_STATE["stock_trade_counts"].get(symbol, 0) + 1
                                                 
                                             save_state(BOT_STATE) 
                                             broadcast_state() 
                                             logger.info(f"✅ Trade Confirmed: {symbol} @ {entry_price}")
                                         else:
-                                            logger.error(f"❌ Trade Rejected/Failed Validation: {symbol} Status: {status}")
+                                            logger.error(f"❌ Trade Rejected/Failed: {symbol} Status: {status}")
                                     else:
                                         logger.error(f"❌ Failed to place order for {symbol}")
                 # ---------------------------- 
@@ -2084,11 +1686,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                 # BROADCAST END of Cycle
                 broadcast_state()
                 
-                # Dynamic Interval: Market Movers need faster updates
                 effective_interval = config_manager.get("general", "check_interval") or 300
-                if strategy_mode == "MARKET_MOVER":
-                    effective_interval = 60 # 1 minute for fast-moving ranks
-                    logger.info(f"⚡ Market Mode: Using faster scan interval (60s).")
                 
                 logger.info(f"Cycle Complete. Sleeping {effective_interval}s...")
                 time.sleep(effective_interval)

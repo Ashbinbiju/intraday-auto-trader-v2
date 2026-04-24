@@ -2,11 +2,10 @@
 backtest.py - Historical Backtester for Intraday Auto-Trader v2
 ================================================================
 Reuses the EXACT same strategy logic as the live bot:
-  - check_buy_condition (VWAP, EMA, Volume, Extension, Wick filters)
-  - check_15m_bias (HTF trend confirmation)
+  - check_buy_condition (Price > VWAP + EMA20)
   - get_dynamic_sr_levels (Auto-Pivot Resistance)
-  - calculate_structure_based_sl / calculate_structure_based_tp
-  - 3-Level Continuous Trailing Stop Loss (TSL)
+  - calculate_structure_based_sl
+  - 2-Level Continuous Trailing Stop Loss (TSL)
 
 Usage:
   python backtest.py --symbol IDFCFIRSTB --token 11184 --from 2026-02-10 --to 2026-02-21
@@ -19,6 +18,7 @@ import numpy as np
 from datetime import datetime, timedelta
 import sys
 import os
+import yfinance as yf
 
 # ─── Setup path so we can import project modules ─────────────────────────────
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -27,7 +27,6 @@ from dhan_api_helper import get_dhan_session, data_limiter
 from indicators import (
     calculate_indicators,
     check_buy_condition,
-    check_15m_bias,
     get_dynamic_sr_levels,
     calculate_sr_levels,
 )
@@ -38,7 +37,6 @@ from dhanhq import dhanhq
 # ─── Constants ────────────────────────────────────────────────────────────────
 ENTRY_END_TIME   = "14:30"   # No new entries after this time
 SQUARE_OFF_TIME  = "15:15"   # Force-close all open positions
-EXTENSION_LIMIT  = 1.5       # Max % from EMA20 (same as live bot)
 MIN_RR           = 1.5       # Minimum risk:reward to accept a trade
 
 
@@ -86,7 +84,53 @@ def fetch_historical_candles(dhan, token: str, from_date: str, to_date: str, int
         return df
 
     except Exception as e:
-        print(f"  [ERR] Error fetching candles: {e}")
+        print(f"  [ERR] Error fetching candles from Dhan: {e}")
+        return None
+
+def fetch_yf_candles(symbol: str, from_date: str, to_date: str, interval_min: int = 5) -> pd.DataFrame | None:
+    """
+    Fetch historical intraday candles using yfinance.
+    """
+    try:
+        yf_symbol = f"{symbol}.NS"
+        interval_str = f"{interval_min}m"
+        # yfinance expects end date to be exclusive for the day, so we might need to add 1 day to to_date
+        end_date_obj = pd.to_datetime(to_date) + pd.Timedelta(days=1)
+        end_date_str = end_date_obj.strftime("%Y-%m-%d")
+        
+        df = yf.download(yf_symbol, start=from_date, end=end_date_str, interval=interval_str, progress=False)
+        
+        if df.empty:
+            print(f"  [WARN] yfinance returned no data for {yf_symbol}.")
+            return None
+            
+        # yfinance returns multi-index columns in recent versions if we don't handle it carefully, 
+        # but let's assume it returns standard columns or flatten them.
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.droplevel(1)
+            
+        df = df.reset_index()
+        # Rename columns to match what the strategy expects
+        df = df.rename(columns={
+            'Datetime': 'datetime',
+            'Date': 'datetime', # Depending on interval, it might be named Date or Datetime
+            'Open': 'open',
+            'High': 'high',
+            'Low': 'low',
+            'Close': 'close',
+            'Volume': 'volume'
+        })
+        
+        # Ensure 'datetime' timezone is removed or localized as needed.
+        # Dhan data is given in IST without tz. YF is usually IST but tz-aware.
+        if df['datetime'].dt.tz is not None:
+            df['datetime'] = df['datetime'].dt.tz_convert('Asia/Kolkata').dt.tz_localize(None)
+            
+        df = df.sort_values('datetime').reset_index(drop=True)
+        return df
+
+    except Exception as e:
+        print(f"  [ERR] Error fetching candles from yfinance: {e}")
         return None
 
 
@@ -209,15 +253,9 @@ def simulate_all(df_5m: pd.DataFrame, df_15m: pd.DataFrame) -> list:
         if df_ind is None or len(df_ind) < 2:
             continue
 
-        df_15m_ind = calculate_indicators(df_slice_15m)
 
-        # HTF bias
-        bias, bias_msg = check_15m_bias(df_15m_ind)
-        if bias != 'BULLISH':
-            continue
-
-        # 5M Buy signal
-        signal, signal_msg = check_buy_condition(df_ind, extension_limit=EXTENSION_LIMIT)
+        # 5M Buy signal (simple: Price > VWAP + EMA20)
+        signal, signal_msg = check_buy_condition(df_ind)
         if not signal:
             continue
 
@@ -326,11 +364,11 @@ def simulate_all(df_5m: pd.DataFrame, df_15m: pd.DataFrame) -> list:
 # ─── Report Printer ───────────────────────────────────────────────────────────
 
 def print_report(symbol: str, results: list):
-    print("\n" + "═" * 80)
-    print(f"  BACKTEST REPORT  —  {symbol}")
-    print("═" * 80)
+    print("\n" + "=" * 80)
+    print(f"  BACKTEST REPORT  -  {symbol}")
+    print("=" * 80)
     print(f"  {'DATE':<12} {'ENTRY':>8} {'EXIT':>8} {'SL':>8} {'TP':>8} {'RR':>5}  {'RESULT':<14}  {'P&L PTS':>8}")
-    print("─" * 80)
+    print("-" * 80)
 
     total_pnl    = 0
     wins         = 0
@@ -340,7 +378,7 @@ def print_report(symbol: str, results: list):
     for r in results:
         if r['status'] == 'NO_SIGNAL':
             no_signal += 1
-            print(f"  {r['date']:<12} {'—':>8} {'—':>8} {'—':>8} {'—':>8} {'—':>5}  {'NO SIGNAL':<14}  {'—':>8}")
+            print(f"  {r['date']:<12} {'-':>8} {'-':>8} {'-':>8} {'-':>8} {'-':>5}  {'NO SIGNAL':<14}  {'-':>8}")
             continue
 
         pnl   = r['pnl_pts']
@@ -361,11 +399,11 @@ def print_report(symbol: str, results: list):
     traded = wins + losses
     win_rate = (wins / traded * 100) if traded > 0 else 0
 
-    print("─" * 80)
+    print("-" * 80)
     print(f"  Total Trades : {traded} ({wins}W / {losses}L) | No-Signal Days: {no_signal}")
     print(f"  Win Rate     : {win_rate:.1f}%")
     print(f"  Total P&L    : {total_pnl:+.2f} pts")
-    print("═" * 80 + "\n")
+    print("=" * 80 + "\n")
 
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
@@ -373,22 +411,34 @@ def print_report(symbol: str, results: list):
 def main():
     parser = argparse.ArgumentParser(description="Backtest the Intraday Auto-Trader strategy on historical data.")
     parser.add_argument('--symbol', required=True, help='NSE Symbol (e.g. IDFCFIRSTB)')
-    parser.add_argument('--token',  required=True, help='Dhan Security ID / Token (e.g. 11184)')
+    parser.add_argument('--token',  required=False, help='Dhan Security ID / Token (e.g. 11184). Optional if using yf.')
     parser.add_argument('--from',   dest='from_date', required=True, help='Start date YYYY-MM-DD')
     parser.add_argument('--to',     dest='to_date',   required=True, help='End date YYYY-MM-DD')
+    parser.add_argument('--source', default='dhan', choices=['dhan', 'yf'], help='Data source: dhan or yf')
     args = parser.parse_args()
 
-    print("\n[+] Connecting to Dhan API...")
-    dhan = get_dhan_session()
+    if args.source == 'dhan':
+        if not args.token:
+            print("[ERR] --token is required when using Dhan data source.")
+            return
+        print("\n[+] Connecting to Dhan API...")
+        dhan = get_dhan_session()
 
-    print(f"[+] Fetching 5-min candles for {args.symbol} ({args.token}) from {args.from_date} to {args.to_date}...")
-    df_5m = fetch_historical_candles(dhan, args.token, args.from_date, args.to_date, interval_min=5)
+        print(f"[+] Fetching 5-min candles for {args.symbol} ({args.token}) from {args.from_date} to {args.to_date}...")
+        df_5m = fetch_historical_candles(dhan, args.token, args.from_date, args.to_date, interval_min=5)
+        
+        print("[+] Fetching 15-min candles...")
+        df_15m = fetch_historical_candles(dhan, args.token, args.from_date, args.to_date, interval_min=15)
+        
+    else:
+        print(f"\n[+] Fetching data from yfinance for {args.symbol}.NS from {args.from_date} to {args.to_date}...")
+        df_5m = fetch_yf_candles(args.symbol, args.from_date, args.to_date, interval_min=5)
+        df_15m = fetch_yf_candles(args.symbol, args.from_date, args.to_date, interval_min=15)
+
     if df_5m is None or df_5m.empty:
         print("[ERR] No 5-min data returned. Exiting.")
         return
 
-    print("[+] Fetching 15-min candles...")
-    df_15m = fetch_historical_candles(dhan, args.token, args.from_date, args.to_date, interval_min=15)
     if df_15m is None or df_15m.empty:
         print("[WARN] No 15-min data. HTF bias will be NEUTRAL for all days.")
         df_15m = pd.DataFrame()

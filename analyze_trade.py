@@ -1,7 +1,7 @@
 
 import logging
 from dhan_api_helper import get_dhan_session, load_dhan_instrument_map, fetch_candle_data
-from indicators import calculate_indicators, check_buy_condition, check_15m_bias
+from indicators import calculate_indicators, check_buy_condition
 import pandas as pd
 from datetime import datetime
 

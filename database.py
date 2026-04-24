@@ -128,34 +128,7 @@ def fetch_trade_history(limit=1000):
         logger.error(f"❌ Error fetching trade history: {e}")
         return []
 
-# --- Market Data (Movers) ---
 
-def log_market_movers_to_db(movers_data):
-    """
-    Logs the list of market movers to the 'market_movers' table.
-    Expects a list of dicts: [{'symbol': 'X', 'rank': 1, 'ltp': 100, 'change': 5.5, ...}]
-    """
-    if not supabase: return
-    try:
-        timestamp = datetime.utcnow().isoformat()
-        records = []
-        
-        for m in movers_data:
-            records.append({
-                "timestamp": timestamp,
-                "symbol": m.get("symbol"),
-                "rank": m.get("rank"),
-                "ltp": float(m.get("ltp", 0)),
-                "change": float(m.get("change", 0)),
-                "side": "Gainer" # Currently we only fetch Gainers
-            })
-            
-        if records:
-            supabase.table("market_movers").insert(records).execute()
-            logger.info(f"✅ Logged {len(records)} Market Movers to DB")
-            
-    except Exception as e:
-        logger.error(f"❌ Error logging market movers to DB: {e}")
 
 def log_trade_execution(pos, exit_price, exit_reason, leverage=1.0):
     """

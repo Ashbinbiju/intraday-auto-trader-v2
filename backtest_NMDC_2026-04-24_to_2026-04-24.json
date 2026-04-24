@@ -1,0 +1,32 @@
+[
+  {
+    "date": "2026-04-24",
+    "status": "TARGET_HIT",
+    "entry_price": 88.94,
+    "exit_price": 89.78,
+    "entry_time": "14:00",
+    "exit_time": "14:20",
+    "sl": 88.38,
+    "tp": 89.78,
+    "tp_reason": "1.5R Minimum (R:R 1.5)",
+    "rr_ratio": 1.5,
+    "pnl_pts": 0.84
+  },
+  {
+    "date": "2026-04-24",
+    "status": "TIME_EXIT",
+    "entry_price": 89.45,
+    "exit_price": 89.48,
+    "entry_time": "14:25",
+    "exit_time": "15:15",
+    "sl": 88.38,
+    "tp": 91.05,
+    "tp_reason": "1.5R Minimum (R:R 1.5)",
+    "rr_ratio": 1.5,
+    "pnl_pts": 0.03
+  },
+  {
+    "date": "2026-04-24",
+    "status": "NO_SIGNAL"
+  }
+]
