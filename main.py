@@ -1491,9 +1491,9 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                         if symbol in seen_symbols: continue
                         seen_symbols.add(symbol)
                         
-                        # Filter: Only positive stocks that moved less than 2%
+                        # Filter: Only stocks with early momentum (0.3% to 3%)
                         stock_change = stock.get('change', 0) or 0
-                        if stock_change <= 0 or stock_change >= 2.0:
+                        if stock_change < 0.3 or stock_change >= 3.0:
                             continue
                         
                         if symbol in BOT_STATE["positions"] and BOT_STATE["positions"][symbol]["status"] == "OPEN":
