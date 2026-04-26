@@ -21,6 +21,7 @@ DEFAULT_CONFIG = {
         "trading_end_time": "11:45"
     },
     "general": {
+        "broker": "dhan",            # 'dhan' or 'angelone'
         "quantity": 1,
         "check_interval": 300,       # 5 minutes
         "dry_run": True
@@ -35,7 +36,11 @@ DEFAULT_CONFIG = {
     "credentials": {
         "dhan_client_id": "",
         "dhan_access_token": "",
-        "smart_api_api_key": ""
+        "smart_api_api_key": "",
+        "angel_api_key": "",
+        "angel_client_id": "",
+        "angel_pin": "",
+        "angel_totp_secret": ""
     }
 }
 
@@ -74,6 +79,10 @@ class ConfigManager:
         dhan_client_id = os.environ.get("DHAN_CLIENT_ID")
         dhan_access_token = os.environ.get("DHAN_ACCESS_TOKEN")
         smart_api_api_key = os.environ.get("SMART_API_KEY")
+        angel_api_key = os.environ.get("ANGEL_API_KEY")
+        angel_client_id = os.environ.get("ANGEL_CLIENT_ID")
+        angel_pin = os.environ.get("ANGEL_PIN")
+        angel_totp_secret = os.environ.get("ANGEL_TOTP_SECRET")
 
         if dhan_client_id and not dhan_client_id.startswith("${"):
             self.config["credentials"]["dhan_client_id"] = dhan_client_id
@@ -83,6 +92,18 @@ class ConfigManager:
             
         if smart_api_api_key and not smart_api_api_key.startswith("${"):
             self.config["credentials"]["smart_api_api_key"] = smart_api_api_key
+            
+        if angel_api_key and not angel_api_key.startswith("${"):
+            self.config["credentials"]["angel_api_key"] = angel_api_key
+            
+        if angel_client_id and not angel_client_id.startswith("${"):
+            self.config["credentials"]["angel_client_id"] = angel_client_id
+            
+        if angel_pin and not angel_pin.startswith("${"):
+            self.config["credentials"]["angel_pin"] = angel_pin
+            
+        if angel_totp_secret and not angel_totp_secret.startswith("${"):
+            self.config["credentials"]["angel_totp_secret"] = angel_totp_secret
 
     def update_nested(self, d, u):
         """Recursively update dictionary d with values from u."""

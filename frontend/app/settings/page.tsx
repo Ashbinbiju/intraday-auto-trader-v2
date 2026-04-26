@@ -13,8 +13,8 @@ export default function SettingsPage() {
         risk: { stop_loss_pct: 0.01, target_pct: 0.02, trail_be_trigger: 0.012 },
         position_sizing: { mode: 'dynamic', risk_per_trade_pct: 1.0, max_position_size_pct: 20.0, min_sl_distance_pct: 0.6, paper_trading_balance: 100000 },
         limits: { max_trades_per_day: 3, max_trades_per_stock: 2, trading_end_time: "14:45", trading_start_time: "09:30" },
-        general: { quantity: 1, check_interval: 300, dry_run: true },
-        credentials: { dhan_client_id: "", dhan_access_token: "" }
+        general: { broker: 'dhan', quantity: 1, check_interval: 300, dry_run: true },
+        credentials: { dhan_client_id: "", dhan_access_token: "", angel_api_key: "", angel_client_id: "", angel_pin: "", angel_totp_secret: "" }
     });
 
     useEffect(() => {
@@ -61,13 +61,18 @@ export default function SettingsPage() {
                     trading_end_time: config.limits.trading_end_time || "14:45"
                 },
                 general: {
+                    broker: config.general.broker || 'dhan',
                     quantity: parseInt(config.general.quantity as any) || 1,
                     check_interval: parseInt(config.general.check_interval as any) || 300,
                     dry_run: config.general.dry_run
                 },
                 credentials: {
                     dhan_client_id: config.credentials?.dhan_client_id || "",
-                    dhan_access_token: config.credentials?.dhan_access_token || ""
+                    dhan_access_token: config.credentials?.dhan_access_token || "",
+                    angel_api_key: config.credentials?.angel_api_key || "",
+                    angel_client_id: config.credentials?.angel_client_id || "",
+                    angel_pin: config.credentials?.angel_pin || "",
+                    angel_totp_secret: config.credentials?.angel_totp_secret || ""
                 }
             };
 
@@ -203,49 +208,95 @@ export default function SettingsPage() {
                         <h3 className="text-xl font-bold mb-4 text-cyan-400 flex items-center gap-2">
                             🔐 API Credentials
                         </h3>
-                        <div className="space-y-5">
-                            <div>
-                                <label className="block text-xs font-semibold text-cyan-200/70 mb-2 uppercase tracking-wider">Client ID</label>
-                                <div className="relative group">
+
+                        <div className="mb-6">
+                            <label className="block text-xs font-semibold text-cyan-200/70 mb-2 uppercase tracking-wider">Active Broker</label>
+                            <select
+                                value={config.general?.broker || 'dhan'}
+                                onChange={(e) => handleChange('general', 'broker', e.target.value)}
+                                className="w-full bg-black/60 border border-white/10 rounded-lg p-3 focus:border-cyan-500 outline-none transition-all font-bold text-cyan-300"
+                            >
+                                <option value="dhan">DhanHQ</option>
+                                <option value="angelone">Angel One (SmartAPI)</option>
+                            </select>
+                        </div>
+
+                        {config.general?.broker === 'dhan' ? (
+                            <div className="space-y-5">
+                                <div>
+                                    <label className="block text-xs font-semibold text-cyan-200/70 mb-2 uppercase tracking-wider">Client ID</label>
+                                    <div className="relative group">
+                                        <input
+                                            type="text"
+                                            value={config.credentials?.dhan_client_id || ""}
+                                            onChange={(e) => handleChange('credentials', 'dhan_client_id', e.target.value)}
+                                            className="w-full bg-black/60 border border-white/10 rounded-lg p-3 pl-4 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/50 outline-none transition-all font-mono text-cyan-300"
+                                            placeholder="e.g. 100..."
+                                        />
+                                    </div>
+                                </div>
+                                <div>
+                                    <div className="flex justify-between items-center mb-2">
+                                        <label className="block text-xs font-semibold text-cyan-200/70 uppercase tracking-wider">Access Token (JWT)</label>
+                                    </div>
+                                    <div className="relative group">
+                                        <input
+                                            type="password"
+                                            value={config.credentials?.dhan_access_token || ""}
+                                            onChange={(e) => handleChange('credentials', 'dhan_access_token', e.target.value)}
+                                            className="w-full bg-black/60 border border-white/10 rounded-lg p-3 pl-4 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/50 outline-none transition-all font-mono text-cyan-300 text-xs truncate"
+                                            placeholder="eyJ..."
+                                        />
+                                        <p className="text-[10px] text-gray-400 mt-2">
+                                            * Expires every 24h. Updates apply immediately.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="space-y-5">
+                                <div>
+                                    <label className="block text-xs font-semibold text-cyan-200/70 mb-2 uppercase tracking-wider">Angel Client ID</label>
                                     <input
                                         type="text"
-                                        value={config.credentials?.dhan_client_id || ""}
-                                        onChange={(e) => handleChange('credentials', 'dhan_client_id', e.target.value)}
-                                        className="w-full bg-black/60 border border-white/10 rounded-lg p-3 pl-4 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/50 outline-none transition-all font-mono text-cyan-300"
-                                        placeholder="e.g. 100..."
+                                        value={config.credentials?.angel_client_id || ""}
+                                        onChange={(e) => handleChange('credentials', 'angel_client_id', e.target.value)}
+                                        className="w-full bg-black/60 border border-white/10 rounded-lg p-3 pl-4 focus:border-cyan-500 outline-none font-mono text-cyan-300"
+                                        placeholder="e.g. A12345"
                                     />
                                 </div>
-                            </div>
-                            <div>
-                                <div className="flex justify-between items-center mb-2">
-                                    <label className="block text-xs font-semibold text-cyan-200/70 uppercase tracking-wider">Access Token (JWT)</label>
-                                    <button
-                                        onClick={() => {
-                                            const el = document.getElementById('token-input');
-                                            if (el) {
-                                                (el as HTMLInputElement).type = (el as HTMLInputElement).type === 'password' ? 'text' : 'password';
-                                            }
-                                        }}
-                                        className="text-[10px] bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 px-2 py-1 rounded transition-colors"
-                                    >
-                                        Show/Hide
-                                    </button>
-                                </div>
-                                <div className="relative group">
+                                <div>
+                                    <label className="block text-xs font-semibold text-cyan-200/70 mb-2 uppercase tracking-wider">Angel PIN</label>
                                     <input
-                                        id="token-input"
                                         type="password"
-                                        value={config.credentials?.dhan_access_token || ""}
-                                        onChange={(e) => handleChange('credentials', 'dhan_access_token', e.target.value)}
-                                        className="w-full bg-black/60 border border-white/10 rounded-lg p-3 pl-4 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/50 outline-none transition-all font-mono text-cyan-300 text-xs truncate"
-                                        placeholder="eyJ..."
+                                        value={config.credentials?.angel_pin || ""}
+                                        onChange={(e) => handleChange('credentials', 'angel_pin', e.target.value)}
+                                        className="w-full bg-black/60 border border-white/10 rounded-lg p-3 pl-4 focus:border-cyan-500 outline-none font-mono text-cyan-300"
+                                        placeholder="4-digit PIN"
                                     />
-                                    <p className="text-[10px] text-gray-400 mt-2">
-                                        * Expires every 24h. Updates apply immediately.
-                                    </p>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-semibold text-cyan-200/70 mb-2 uppercase tracking-wider">API Key</label>
+                                    <input
+                                        type="text"
+                                        value={config.credentials?.angel_api_key || ""}
+                                        onChange={(e) => handleChange('credentials', 'angel_api_key', e.target.value)}
+                                        className="w-full bg-black/60 border border-white/10 rounded-lg p-3 pl-4 focus:border-cyan-500 outline-none font-mono text-cyan-300"
+                                        placeholder="SmartAPI Key"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-semibold text-cyan-200/70 mb-2 uppercase tracking-wider">TOTP Secret</label>
+                                    <input
+                                        type="password"
+                                        value={config.credentials?.angel_totp_secret || ""}
+                                        onChange={(e) => handleChange('credentials', 'angel_totp_secret', e.target.value)}
+                                        className="w-full bg-black/60 border border-white/10 rounded-lg p-3 pl-4 focus:border-cyan-500 outline-none font-mono text-cyan-300"
+                                        placeholder="Used to generate 2FA token"
+                                    />
                                 </div>
                             </div>
-                        </div>
+                        )}
                     </div>
 
                     {/* Trade Limits */}

@@ -5,7 +5,7 @@ import pandas as pd
 from datetime import datetime
 from indicators import calculate_indicators, check_buy_condition
 from utils import get_ist_now
-from dhan_api_helper import fetch_candle_data, fetch_ltp
+from broker_router import fetch_candle_data, fetch_ltp
 
 logger = logging.getLogger("AsyncScanner")
 # Ensure logging output matches MainBot

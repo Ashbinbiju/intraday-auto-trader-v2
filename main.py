@@ -5,7 +5,7 @@ import asyncio
 import pandas as pd
 import threading
 from scraper import fetch_top_performing_sectors, fetch_stocks_in_sector, fetch_market_indices
-from dhan_api_helper import get_dhan_session, load_dhan_instrument_map, fetch_candle_data, fetch_ltp, fetch_net_positions, place_order_api, fetch_holdings, verify_order_status, fetch_market_feed_bulk
+from broker_router import get_session, load_instrument_map, fetch_candle_data, fetch_ltp, fetch_net_positions, place_order_api, fetch_holdings, verify_order_status, fetch_market_feed_bulk
 from indicators import calculate_indicators, check_buy_condition
 from utils import is_market_open, get_ist_now
 from config import config_manager
@@ -169,7 +169,7 @@ def cleanup_pending_orders(dhan):
         if not pending:
             return
         
-        from dhan_api_helper import get_order_status
+        from broker_router import get_order_status
         
         current_time = time.time()
         for correlation_id, data in pending.items():
@@ -241,10 +241,11 @@ def place_buy_order(dhan, symbol, token, qty, correlation_id=None):
             "exchange": "NSE",
             "ordertype": "MARKET",
             "producttype": "INTRADAY",
-            "quantity": qty
+            "quantity": qty,
+            "correlation_id": correlation_id
         }
         # Use helper place_order_api
-        from dhan_api_helper import place_order_api
+        from broker_router import place_order_api
         orderId = place_order_api(dhan, orderparams)
         logger.info(f"Order Placed for {symbol} | Order ID: {orderId} | cID: {correlation_id}")
         
@@ -295,10 +296,11 @@ def place_sell_order(dhan, symbol, token, qty, reason="EXIT", correlation_id=Non
             "exchange": "NSE",
             "ordertype": "MARKET",
             "producttype": "INTRADAY",
-            "quantity": qty
+            "quantity": qty,
+            "correlation_id": correlation_id
         }
         # Use helper place_order_api
-        from dhan_api_helper import place_order_api
+        from broker_router import place_order_api
         orderId = place_order_api(dhan, orderparams)
         logger.info(f"SELL Order Placed for {symbol} ({reason}) | Order ID: {orderId} | cID: {correlation_id}")
         
@@ -345,7 +347,7 @@ def place_sell_order_with_retry(dhan, symbol, token, qty, reason, max_retries=3)
     
     # All verification attempts exhausted - check positions as last resort
     logger.warning(f"🔍 Verification timeout for {symbol}. Checking broker positions...")
-    from dhan_api_helper import fetch_net_positions
+    from broker_router import fetch_net_positions
     live_positions = fetch_net_positions(dhan)
     
     if live_positions:
@@ -1227,7 +1229,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
 
     # ... (SmartAPI Init) ...
     # 1. Initialize Dhan API
-    dhan = get_dhan_session()
+    dhan = get_session()
     if not dhan:
         logger.critical("Failed to connect to Dhan API. Exiting.")
         BOT_STATE["is_running"] = False
@@ -1237,7 +1239,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
     dhan = dhan  # Legacy alias - to be refactored eventually 
 
     # 2. Load Dhan Instrument Map
-    token_map = load_dhan_instrument_map()
+    token_map = load_instrument_map()
     if not token_map:
         logger.critical("Failed to load Dhan Token Map. Exiting.")
         BOT_STATE["is_running"] = False
@@ -1384,7 +1386,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                          save_state(BOT_STATE)
                      else:
                          logger.warning("Reconciliation Failed. Attempting to Re-Authenticate...")
-                         new_session = get_dhan_session()
+                         new_session = get_session()
                          if new_session:
                              DHAN_API_SESSION = new_session
                              dhan = new_session # Update local reference
@@ -1401,7 +1403,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                 # ----------------------
 
                 # --- 🔍 TOKEN HEALTH CHECK ---
-                from dhan_api_helper import check_connection
+                from broker_router import check_connection
                 if dhan:
                     is_valid, reason = check_connection(dhan)
                     if not is_valid:
@@ -1641,7 +1643,7 @@ def run_bot_loop(async_loop=None, ws_manager=None):
                                         # TIMEOUT RECOVERY
                                         if not is_success and "TIMEOUT" in str(status):
                                             logger.warning(f"⚠️ Order Verification Timed Out for {symbol}. Checking Positions...")
-                                            from dhan_api_helper import fetch_net_positions
+                                            from broker_router import fetch_net_positions
                                             live_positions = fetch_net_positions(dhan)
                                             if live_positions:
                                                 for pos in live_positions:
