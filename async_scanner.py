@@ -67,7 +67,13 @@ class AsyncScanner:
         stocks_list: list of dicts [{'symbol': 'INFY', 'ltp': 1500}, ...]
         token_map: dict {'INFY': '1234'}
         """
-        start_time = datetime.now()
+        ACTIVE_SYMBOLS = [s.get('symbol') for s in stocks_list]
+        
+        # Subscribe to websocket for fast LTPs
+        from main import ANGEL_WS
+        if ANGEL_WS and ANGEL_WS.connected:
+            tokens_to_track = [token_map.get(s) for s in ACTIVE_SYMBOLS if token_map.get(s)]
+            ANGEL_WS.subscribe(tokens_to_track)
         logger.info(f"Starting Async Scan for {len(stocks_list)} stocks...")
         
         # Initialize Semaphore inside the loop to ensure Loop Affinity

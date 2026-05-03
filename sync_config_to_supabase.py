@@ -1,17 +1,14 @@
-"""
-Quick script to sync local config.json to Supabase remote config.
-Run this to update the Render deployment with your latest settings.
-"""
-from config import config_manager
 import json
 
-# Load current local config
+# 1. Load current local config BEFORE importing anything that might overwrite it
 with open("config.json", "r") as f:
     local_config = json.load(f)
 
-print("📤 Syncing config to Supabase...")
-leverage = local_config.get('position_sizing', {}).get('leverage_equity', 'NOT FOUND')
-print(f"Leverage setting: {leverage}")
+from config import config_manager
+
+# Update config manager with local config using deep merge
+config_manager.update_nested(config_manager.config, local_config)
+print(f"DEBUG: Broker in config_manager is {config_manager.config['general']['broker']}")
 
 # Save to Supabase
 config_manager.save_config()

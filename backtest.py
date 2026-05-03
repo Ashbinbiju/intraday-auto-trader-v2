@@ -32,6 +32,7 @@ from indicators import (
 )
 from main import calculate_structure_based_sl, calculate_structure_based_tp
 from dhanhq import dhanhq
+from angel_api_helper import get_session as get_angel_session
 
 
 # ─── Constants ────────────────────────────────────────────────────────────────
@@ -131,6 +132,44 @@ def fetch_yf_candles(symbol: str, from_date: str, to_date: str, interval_min: in
 
     except Exception as e:
         print(f"  [ERR] Error fetching candles from yfinance: {e}")
+        return None
+
+def fetch_angel_candles(angel, token: str, from_date: str, to_date: str, interval_min: int = 5) -> pd.DataFrame | None:
+    try:
+        interval_map = {1: "ONE_MINUTE", 5: "FIVE_MINUTE", 15: "FIFTEEN_MINUTE"}
+        angel_interval = interval_map.get(interval_min, "FIVE_MINUTE")
+        
+        # format: "YYYY-MM-DD HH:MM"
+        from_str = f"{from_date} 09:15"
+        # We need end of day inclusive
+        to_str = f"{to_date} 15:30"
+        
+        params = {
+            "exchange": "NSE",
+            "symboltoken": token,
+            "interval": angel_interval,
+            "fromdate": from_str,
+            "todate": to_str
+        }
+        
+        # import time to sleep to avoid rate limits
+        import time
+        time.sleep(1)
+        
+        response = angel.getCandleData(params)
+        
+        if response and response.get('status') and response.get('data'):
+            df = pd.DataFrame(response['data'], columns=['datetime', 'open', 'high', 'low', 'close', 'volume'])
+            df['datetime'] = pd.to_datetime(df['datetime'])
+            if df['datetime'].dt.tz is not None:
+                df['datetime'] = df['datetime'].dt.tz_convert('Asia/Kolkata').dt.tz_localize(None)
+            df = df.sort_values('datetime').reset_index(drop=True)
+            return df
+        else:
+            print(f"  [WARN] Angel API returned no data for token {token}. Response: {response}")
+            return None
+    except Exception as e:
+        print(f"  [ERR] Error fetching candles from Angel: {e}")
         return None
 
 
@@ -414,7 +453,7 @@ def main():
     parser.add_argument('--token',  required=False, help='Dhan Security ID / Token (e.g. 11184). Optional if using yf.')
     parser.add_argument('--from',   dest='from_date', required=True, help='Start date YYYY-MM-DD')
     parser.add_argument('--to',     dest='to_date',   required=True, help='End date YYYY-MM-DD')
-    parser.add_argument('--source', default='dhan', choices=['dhan', 'yf'], help='Data source: dhan or yf')
+    parser.add_argument('--source', default='dhan', choices=['dhan', 'yf', 'angelone'], help='Data source: dhan, yf, or angelone')
     args = parser.parse_args()
 
     if args.source == 'dhan':
@@ -429,6 +468,19 @@ def main():
         
         print("[+] Fetching 15-min candles...")
         df_15m = fetch_historical_candles(dhan, args.token, args.from_date, args.to_date, interval_min=15)
+        
+    elif args.source == 'angelone':
+        if not args.token:
+            print("[ERR] --token is required when using Angel One data source.")
+            return
+        print("\n[+] Connecting to Angel One API...")
+        angel = get_angel_session()
+
+        print(f"[+] Fetching 5-min candles for {args.symbol} ({args.token}) from {args.from_date} to {args.to_date} via Angel One...")
+        df_5m = fetch_angel_candles(angel, args.token, args.from_date, args.to_date, interval_min=5)
+        
+        print("[+] Fetching 15-min candles via Angel One...")
+        df_15m = fetch_angel_candles(angel, args.token, args.from_date, args.to_date, interval_min=15)
         
     else:
         print(f"\n[+] Fetching data from yfinance for {args.symbol}.NS from {args.from_date} to {args.to_date}...")

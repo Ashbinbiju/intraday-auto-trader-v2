@@ -31,7 +31,11 @@ def get_session():
     return None
 
 def check_connection(session):
-    return get_broker_module().check_connection(session)
+    module = get_broker_module()
+    if hasattr(module, 'check_connection'):
+        return module.check_connection(session)
+    logger.warning("check_connection not available for active broker")
+    return False, "METHOD_MISSING"
 
 def load_instrument_map():
     module = get_broker_module()
@@ -42,8 +46,20 @@ def load_instrument_map():
     return {}
 
 def fetch_ltp(session, token, symbol):
+    broker = get_active_broker()
+    if broker == "angelone":
+        try:
+            from angel_stream_ws import LIVE_LTP_DICT
+            if str(token) in LIVE_LTP_DICT:
+                return LIVE_LTP_DICT[str(token)]
+        except ImportError:
+            pass
+
     module = get_broker_module()
-    return module.fetch_ltp(session, token, symbol)
+    if hasattr(module, 'fetch_ltp'):
+        return module.fetch_ltp(session, token, symbol)
+    logger.warning("fetch_ltp not available for active broker")
+    return None
 
 def fetch_candle_data(session, token, symbol, interval="FIVE_MINUTE", days=10):
     module = get_broker_module()
@@ -68,6 +84,18 @@ def verify_order_status(session, symbol, correlation_id):
     return False
 
 def fetch_market_feed_bulk(session, token_list):
+    broker = get_active_broker()
+    if broker == "angelone":
+        try:
+            from angel_stream_ws import LIVE_LTP_DICT
+            feed = {}
+            for token in token_list:
+                if str(token) in LIVE_LTP_DICT:
+                    feed[str(token)] = LIVE_LTP_DICT[str(token)]
+            return feed
+        except ImportError:
+            return {}
+
     module = get_broker_module()
     if hasattr(module, 'fetch_market_feed_bulk'):
         return module.fetch_market_feed_bulk(session, token_list)

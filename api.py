@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
@@ -11,7 +11,8 @@ import main
 from main import (
     run_bot_loop, 
     BOT_STATE, 
-    place_sell_order
+    place_sell_order,
+    place_sell_order_with_retry
 )
 from config import config_manager
 from ws_hub import manager
@@ -30,23 +31,34 @@ from smart_websocket import OrderUpdateWS
 
 async def start_order_update_ws():
     """
-    Waits for SmartAPI session and starts Order Update WS.
+    Waits for Broker session and starts Order Update WS (if supported).
     """
-    logger.info("Waiting for Dhan API Session to initialize...")
-    while True:
-        if getattr(main, 'DHAN_API_SESSION', None): # Check connectivity (Dhan object exists)
-            # Get IDs from config
-            client_id = config_manager.get("credentials", "dhan_client_id")
-            access_token = config_manager.get("credentials", "dhan_access_token")
+    logger.info("Waiting for Broker Session to initialize...")
+    max_retries = 60  # Timeout after ~2 minutes
+    retries = 0
+    
+    while retries < max_retries:
+        if getattr(main, 'DHAN_API_SESSION', None): # Session exists
+            broker = config_manager.get("general", "broker") or "dhan"
             
-            logger.info("Session Found! Starting Order Update WebSocket (Official Lib)...")
-            # from smart_polling import OrderUpdatePoller
-            order_ws = OrderUpdateWS(client_id, access_token, BOT_STATE, manager)
-            # order_poller = OrderUpdatePoller(client_id, access_token, BOT_STATE, manager)
-            # Run in loop
-            await order_ws.connect_async()
+            if broker == "dhan":
+                # Dhan Credentials
+                client_id = config_manager.get("credentials", "dhan_client_id")
+                access_token = config_manager.get("credentials", "dhan_access_token")
+                logger.info("Session Found! Starting Dhan Order Update WebSocket...")
+                order_ws = OrderUpdateWS(client_id, access_token, BOT_STATE, manager)
+                await order_ws.connect_async()
+            elif broker == "angelone":
+                from angel_order_ws import AngelOrderWS
+                logger.info("Session Found! Starting Angel Order Update WebSocket...")
+                order_ws = AngelOrderWS(main.DHAN_API_SESSION, BOT_STATE, manager)
+                await order_ws.connect_async()
             break
+            
         await asyncio.sleep(2)
+        retries += 1
+    else:
+        logger.error("Timeout waiting for Broker session to initialize.")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -91,6 +103,7 @@ class LimitsConfig(BaseModel):
     trading_end_time: str
 
 class GeneralConfig(BaseModel):
+    broker: str
     quantity: int
     check_interval: int
     dry_run: bool
@@ -101,10 +114,16 @@ class PositionSizingConfig(BaseModel):
     max_position_size_pct: float
     min_sl_distance_pct: float
     paper_trading_balance: float
+    leverage_equity: float
 
 class CredentialsConfig(BaseModel):
     dhan_client_id: str
     dhan_access_token: str
+    smart_api_api_key: str
+    angel_api_key: str
+    angel_client_id: str
+    angel_pin: str
+    angel_totp_secret: str
 
 class FullConfig(BaseModel):
     risk: RiskConfig
@@ -143,53 +162,98 @@ def toggle_trading():
     with state_lock:
         BOT_STATE["is_trading_allowed"] = not BOT_STATE["is_trading_allowed"]
         save_state(BOT_STATE)
-    return {"status": "success", "is_trading_allowed": BOT_STATE["is_trading_allowed"]}
+        new_state = BOT_STATE["is_trading_allowed"]
+    return {"status": "success", "is_trading_allowed": new_state}
 
 @app.post("/trade/close/{symbol}")
 async def close_position(symbol: str):
+    # 1. Read necessary data under lock
     with state_lock:
         if symbol not in BOT_STATE["positions"]:
             raise HTTPException(status_code=404, detail="Position not found")
         
-        pos = BOT_STATE["positions"][symbol]
-        if pos["status"] != "OPEN":
+        pos_data = BOT_STATE["positions"][symbol]
+        if pos_data["status"] != "OPEN":
             raise HTTPException(status_code=400, detail="Position already closed")
+            
+        qty = pos_data['qty']
+        current_ltp = pos_data.get('current_ltp', 0.0)
+    
+    # 2. Perform Network I/O outside lock
+    from main import TOKEN_MAP, DHAN_API_SESSION
+    token = TOKEN_MAP.get(symbol)
+    if not token:
+        raise HTTPException(status_code=500, detail="Token not found")
+    
+    try:
+        order_id, verified, exec_price = place_sell_order_with_retry(DHAN_API_SESSION, symbol, token, qty, reason="MANUAL_CLOSE")
         
-        # Get token from instrument map
-        from main import TOKEN_MAP, SMART_API_SESSION
-        token = TOKEN_MAP.get(symbol)
-        if not token:
-            raise HTTPException(status_code=500, detail="Token not found")
+        # Determine the final exit price (fallback to LTP if verification fails but order placed)
+        final_exit_price = exec_price if exec_price and exec_price > 0 else current_ltp
         
-        # Place sell order
-        try:
-            place_sell_order(SMART_API_SESSION, symbol, token, pos['qty'], reason="MANUAL_CLOSE")
-            
-            # Update State
-            current_ltp = pos.get('current_ltp', 0.0)
-            entry_price = pos.get('entry_price', 0.0)
-            
-            pos['status'] = "CLOSED"
-            pos['exit_reason'] = "MANUAL_CLOSE"
-            pos['exit_price'] = current_ltp
-            pos['exit_time'] = datetime.now().isoformat()
-            
-            # Log to DB
+        # 3. Update State under lock
+        with state_lock:
+            if symbol in BOT_STATE["positions"]:
+                pos = BOT_STATE["positions"][symbol]
+                pos['status'] = "CLOSED"
+                pos['exit_reason'] = "MANUAL_CLOSE"
+                pos['exit_price'] = final_exit_price
+                pos['exit_time'] = datetime.now().isoformat()
+                pos_copy = dict(pos) # Copy for logging
+                save_state(BOT_STATE)
+            else:
+                pos_copy = None
+                
+        # 4. Database I/O outside lock
+        if pos_copy:
             from database import log_trade_execution
             from config import config_manager
             
             leverage = config_manager.get("position_sizing", "leverage_equity") or 1.0
-            log_trade_execution(pos, current_ltp, "MANUAL_CLOSE", leverage)
+            log_trade_execution(pos_copy, final_exit_price, "MANUAL_CLOSE", leverage)
+        
+        # 5. Broadcast (async network I/O) outside lock
+        from ws_hub import manager
+        await manager.broadcast(BOT_STATE)
+        
+        return {"status": "success", "message": f"Closed {symbol}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/portfolio")
+def get_portfolio():
+    from broker_router import fetch_holdings
+    if getattr(main, 'DHAN_API_SESSION', None) is None:
+        raise HTTPException(status_code=503, detail="Broker not connected")
+    
+    holdings = fetch_holdings(main.DHAN_API_SESSION)
+    return {"status": "success", "data": holdings}
+
+@app.post("/angel-postback")
+async def angel_postback(request: Request):
+    """
+    Angel One Postback/Webhook for real-time order updates.
+    Acts as a highly reliable fallback if the WebSocket disconnects.
+    """
+    try:
+        data = await request.json()
+        status = data.get("status", "").lower()
+        ordertag = data.get("ordertag", "")
+        symbol = data.get("tradingsymbol", "").replace("-EQ", "")
+        
+        logger.info(f"Postback Event: {symbol} | Status: {status} | Tag: {ordertag}")
+        
+        if status in ["complete", "rejected", "cancelled"]:
+            from main import DHAN_API_SESSION
+            from angel_order_ws import AngelOrderWS
+            # Re-use the existing Execution handler logic from the WebSocket class
+            handler = AngelOrderWS(DHAN_API_SESSION, BOT_STATE, manager)
+            handler._handle_execution(symbol, ordertag, status, data)
             
-            save_state(BOT_STATE)
-            
-            # Broadcast Update
-            from ws_hub import manager
-            await manager.broadcast(BOT_STATE)
-            
-            return {"status": "success", "message": f"Closed {symbol}"}
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+        return {"status": "success"}
+    except Exception as e:
+        logger.error(f"Postback error: {e}")
+        return {"status": "error"}
 
 @app.post("/restart")
 def restart_server():
@@ -268,7 +332,7 @@ def start_keep_alive():
             time.sleep(600) # 10 Minutes
             try:
                 # Ping root or a health endpoint
-                r = requests.get(f"{url}/")
+                r = requests.get(f"{url}/", timeout=30)
                 logger.info(f"Keep-Alive Ping: {r.status_code}")
             except Exception as e:
                 logger.error(f"Keep-Alive Failed: {e}")

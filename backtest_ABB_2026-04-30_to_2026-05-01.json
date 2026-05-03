@@ -1,0 +1,32 @@
+[
+  {
+    "date": "2026-04-30",
+    "status": "TARGET_HIT",
+    "entry_price": 7177.0,
+    "exit_price": 7222.65,
+    "entry_time": "13:30",
+    "exit_time": "14:10",
+    "sl": 7146.57,
+    "tp": 7222.65,
+    "tp_reason": "1.5R Minimum (R:R 1.5)",
+    "rr_ratio": 1.5,
+    "pnl_pts": 45.65
+  },
+  {
+    "date": "2026-04-30",
+    "status": "TARGET_HIT",
+    "entry_price": 7214.5,
+    "exit_price": 7292.28,
+    "entry_time": "14:15",
+    "exit_time": "14:30",
+    "sl": 7162.65,
+    "tp": 7292.28,
+    "tp_reason": "1.5R Minimum (R:R 1.5)",
+    "rr_ratio": 1.5,
+    "pnl_pts": 77.78
+  },
+  {
+    "date": "2026-04-30",
+    "status": "NO_SIGNAL"
+  }
+]

@@ -31,7 +31,8 @@ DEFAULT_CONFIG = {
         "risk_per_trade_pct": 1.0,
         "max_position_size_pct": 20.0,
         "min_sl_distance_pct": 0.6,
-        "paper_trading_balance": 100000
+        "paper_trading_balance": 100000,
+        "leverage_equity": 5.0
     },
     "credentials": {
         "dhan_client_id": "",

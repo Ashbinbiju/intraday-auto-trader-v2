@@ -264,6 +264,7 @@ def place_buy_order(dhan, symbol, token, qty, correlation_id=None):
 
 # Shared State for API
 DHAN_API_SESSION = None
+ANGEL_WS = None
 TOKEN_MAP = {}
 
 
@@ -1231,12 +1232,21 @@ def run_bot_loop(async_loop=None, ws_manager=None):
     # 1. Initialize Dhan API
     dhan = get_session()
     if not dhan:
-        logger.critical("Failed to connect to Dhan API. Exiting.")
+        logger.critical("Failed to connect to Broker API. Exiting.")
         BOT_STATE["is_running"] = False
         return
     
+    global DHAN_API_SESSION, ANGEL_WS
     DHAN_API_SESSION = dhan 
-    dhan = dhan  # Legacy alias - to be refactored eventually 
+    
+    from broker_router import get_active_broker
+    if get_active_broker() == "angelone":
+        try:
+            from angel_stream_ws import AngelStreamWS
+            ANGEL_WS = AngelStreamWS(DHAN_API_SESSION)
+            ANGEL_WS.connect_async()
+        except Exception as e:
+            logger.error(f"Failed to start Angel WS: {e}")
 
     # 2. Load Dhan Instrument Map
     token_map = load_instrument_map()
@@ -1336,15 +1346,6 @@ def run_bot_loop(async_loop=None, ws_manager=None):
     watchdog_thread = threading.Thread(target=run_heartbeat_watchdog, daemon=True, name="Watchdog")
     watchdog_thread.start()
 
-
-
-    # 4. Start Dhan Order WebSocket (Real-time Updates)
-    try:
-        logger.info("Initializing Dhan Order WebSocket...")
-        from dhan_websocket import start_dhan_websocket
-        start_dhan_websocket(BOT_STATE)
-    except Exception as e:
-        logger.error(f"Failed to start Dhan Order WebSocket: {e}")
 
     try:
         while True:

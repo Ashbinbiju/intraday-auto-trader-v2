@@ -11,7 +11,7 @@ export default function SettingsPage() {
 
     const [config, setConfig] = useState<any>({
         risk: { stop_loss_pct: 0.01, target_pct: 0.02, trail_be_trigger: 0.012 },
-        position_sizing: { mode: 'dynamic', risk_per_trade_pct: 1.0, max_position_size_pct: 20.0, min_sl_distance_pct: 0.6, paper_trading_balance: 100000 },
+        position_sizing: { mode: 'dynamic', risk_per_trade_pct: 1.0, max_position_size_pct: 20.0, min_sl_distance_pct: 0.6, paper_trading_balance: 100000, leverage_equity: 5.0 },
         limits: { max_trades_per_day: 3, max_trades_per_stock: 2, trading_end_time: "14:45", trading_start_time: "09:30" },
         general: { broker: 'dhan', quantity: 1, check_interval: 300, dry_run: true },
         credentials: { dhan_client_id: "", dhan_access_token: "", angel_api_key: "", angel_client_id: "", angel_pin: "", angel_totp_secret: "" }
@@ -52,7 +52,8 @@ export default function SettingsPage() {
                     risk_per_trade_pct: parseFloat(config.position_sizing.risk_per_trade_pct as any) || 1.0,
                     max_position_size_pct: parseFloat(config.position_sizing.max_position_size_pct as any) || 20.0,
                     min_sl_distance_pct: parseFloat(config.position_sizing.min_sl_distance_pct as any) || 0.6,
-                    paper_trading_balance: parseInt(config.position_sizing.paper_trading_balance as any) || 100000
+                    paper_trading_balance: parseInt(config.position_sizing.paper_trading_balance as any) || 100000,
+                    leverage_equity: parseFloat(config.position_sizing.leverage_equity as any) || 5.0
                 },
                 limits: {
                     max_trades_per_day: parseInt(config.limits.max_trades_per_day as any) || 3,
